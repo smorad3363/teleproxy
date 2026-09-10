@@ -12,7 +12,7 @@ import (
 
 const (
 	createWithSecretToken = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-	callerProvidedSecret = "00112233445566778899aabbccddeeff"
+	callerProvidedSecret  = "00112233445566778899aabbccddeeff"
 )
 
 func TestCreateUserWithSecretSendsExactSecretDisabled(t *testing.T) {
