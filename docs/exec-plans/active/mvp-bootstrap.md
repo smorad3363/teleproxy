@@ -3,7 +3,7 @@
 Status: ACTIVE
 Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
-Latest verified checkpoint: `a7f83236a797120d2f5f34d8201a7de73b0b959f`
+Latest verified checkpoint: `0ee6a2c0651c1db150b6939341664b7ede203c38`
 
 ## Purpose
 
@@ -15,7 +15,7 @@ Build Teleproxy incrementally from the supplied roadmap while keeping every mile
 - Go + lightweight HTTP + SQLite for Control Plane; Telemt remains an external data-plane component.
 - Docker-first installer is rerun-safe and does not expose the Telemt API on the host.
 - No Docker socket in the Web App.
-- No plaintext passwords, session/API/MTProto secrets, bot tokens, or private keys in logs/state.
+- No plaintext passwords, session/API/MTProto secrets, bot tokens, webhook secrets, or private keys in logs/state.
 - Proxy-user secrets are reveal-once and never stored by Control Plane.
 - Desired state is persisted before data-plane reconciliation.
 - Credit Buckets with independent expiry are authoritative business state; Telemt quota/expiry is only an enforcement projection.
@@ -45,17 +45,16 @@ On interruption: read this plan; compare branch head with `Latest verified check
 - CP-017 bounded reconciliation runner core: `5505a1e981270f38474cfbaccb40a8abc23e50e9`, CI `34458886839` PASS.
 - CP-018 Control Plane reconciliation wiring: `3664c7ce93264b4036ee87a1862aa1ae3634c41a`, CI `34462985548` PASS.
 - CP-019 Telegram identity + idempotent start-gift foundation: `a7f83236a797120d2f5f34d8201a7de73b0b959f`, CI `34463953470` PASS.
+- CP-020 Telegram Bot API + safe start core: `0ee6a2c0651c1db150b6939341664b7ede203c38`, CI `34465039914` PASS.
 
-### CP-019 implemented
+### CP-020 implemented
 
-- additive migration 006 creates `telegram_users` with unique Telegram identity and one-to-one proxy-user mapping
-- non-secret typed `start_gift_bytes` setting defaults to decimal 100MB (`100_000_000` bytes)
-- `/start` domain bootstrap is one SQLite transaction: proxy user, Telegram mapping and initial Credit Bucket succeed or roll back together
-- deterministic proxy usernames are derived from positive Telegram IDs, not display names
-- initial gift carries a per-user idempotency key; concurrent/repeated starts produce one user/mapping/gift
-- changing start-gift setting affects only future new users; replay returns the originally granted amount
-- migration upgrade test proves v5 proxy/credit rows survive migration 006 with legacy `idempotency_key` left NULL
-- no Telegram network transport or bot token exists yet
+- protected owner-only Bot token loader; token is never stored in SQLite or surfaced through URL-bearing network errors
+- bounded Telegram Bot API `sendMessage` client with sanitized failure codes and response-size limits
+- strict Telegram update/message structs and deterministic `/start` / `/start@botname` parsing with optional validated payload
+- start application reuses CP-019 transactional bootstrap and returns Telegram identity, proxy username and current start-gift/balance state
+- group messages, bot-authored messages and unrelated commands do not create users
+- Telemt user views can retrieve validated `tg://proxy` links without Control Plane persisting the MTProto secret
 
 ## Supplied source hashes
 
@@ -72,28 +71,27 @@ Telemt 3.5.7, upstream commit `4ca7418442478cd92f9e861c21977a81b249efc8`:
 
 ## Active stage
 
-### Stage 7B1 — Telegram Bot API client + safe command/update core — ACTIVE
+### Stage 7B2 — Authenticated webhook + Control Plane wiring — ACTIVE
 
-Roadmap basis: Phase 3 requires Telegram Bot `/start` and user menu. Production webhook is preferred later and webhook secret authentication is required; this milestone first verifies transport/client contracts independently from HTTP webhook wiring.
+Roadmap basis: Phase 3 needs a production Telegram Bot path and the reliability section prefers webhook mode. Telegram's `secret_token` header authenticates configured webhook requests.
 
 Scope only:
-- add protected-file Bot token loader with strict file-permission checks; never store token in SQLite or logs
-- add narrow Telegram Bot API client for `sendMessage` using bounded HTTP timeouts/body limits and sanitized typed errors
-- add strict update/message structs and `/start` command parser with optional payload extraction
-- add a start application handler that invokes the verified `telegramuser.Start` service and produces a safe domain response containing Telegram identity, proxy username and current start-gift state
-- add Telemt user-link retrieval client support based on upstream user views so existing users can later receive proxy links without Control Plane storing plaintext MTProto secrets
-- no webhook HTTP endpoint, Bot token config wiring, Telemt user creation, Forced Join, referrals, sponsor or Bot Admin in B1
+- add strict owner-only loader/validator for Telegram webhook secret token; 1..256 chars, ASCII letters/digits/underscore/hyphen only
+- add a bounded webhook HTTP handler: POST only, exact constant-time secret-header check, JSON/content-type validation, small body cap, and a per-source/global request-rate bound that does not trust Telegram user IP as identity
+- invoke the verified `StartApplication`; on handled `/start`, send a concise safe message through the verified Bot API client
+- Bot is optional: configure it only when token file, webhook secret file and bot username are all supplied; partial config is rejected
+- wire the webhook on a dedicated fixed path outside admin session/CSRF routes while keeping all existing admin routes unchanged
+- add Compose pass-through variables only; current installer remains valid without Bot configuration and must still pass rerun E2E
+- no `setWebhook` registration call, Telemt proxy-user provisioning, referral, Forced Join, sponsor, Bot Admin or broad UI in this milestone
 
 Acceptance:
-- token files must be regular, owner-readable only and non-empty; token value never appears in errors
-- Telegram API non-2xx/malformed/oversized responses map to narrow errors without response-body leakage
-- `/start`, `/start@botname` and optional payload parse deterministically; unrelated messages are ignored
-- repeated start handling remains idempotent through CP-019 service
-- Telemt link retrieval validates username/output and returns link strings but never exposes/stores raw secret fields
-- Go format/vet/test and installer/Telemt E2E stay green
-
-### Stage 7B2 — Authenticated webhook + Control Plane wiring — PENDING
-After B1 verification: add Telegram webhook endpoint with Telegram secret-token verification, request-size/rate bounds, config from protected token/secret files, Bot API sending, startup-safe lifecycle wiring and tests. Keep Forced Join/referrals separate.
+- missing/wrong secret header returns rejection before JSON decode or DB mutation
+- request body is bounded and malformed/unknown-field payloads fail safely
+- only valid private `/start` updates can create/bootstrap a Telegram user and produce an outbound Bot API message
+- outbound API failures never echo Bot token or upstream body and do not undo the already-idempotent start transaction
+- optional Bot configuration is all-or-none and startup without Bot remains unchanged
+- no raw Telegram payloads, Bot token or webhook secret are logged
+- Go format/vet/test and Docker/Telemt installer E2E remain green
 
 ### Stage 7B3 — Proxy provisioning/link response — PENDING
 After webhook transport is verified: create missing Telemt user fail-closed, trigger quota reconciliation, retrieve Telemt-generated links and return user menu/status without storing MTProto secrets.
@@ -111,8 +109,8 @@ Unique-per-invitee referral attribution, self-referral protection, idempotent re
 - Quota `0` means blocked, not unlimited.
 - SQLite stays single-connection in MVP so connection-scoped PRAGMAs remain reliable.
 - Roadmap Phase 3 order is Bot start/user menu, Forced Join, referrals/rewards, proxy links; implementation is split into independently verified milestones.
-- Bot token is a secret and is read from a protected file rather than ordinary SQLite settings.
-- Pinned Telemt user views reconstruct `tg://proxy` links from Telemt-managed user secrets, so Control Plane can display links later without persisting plaintext MTProto secrets itself.
+- Bot token and webhook secret are runtime secrets and are read from protected files rather than ordinary SQLite settings.
+- Pinned Telemt user views reconstruct `tg://proxy` links from Telemt-managed user secrets, so Control Plane can display links without persisting plaintext MTProto secrets itself.
 
 ## Validation/failure log
 
@@ -125,10 +123,11 @@ Unique-per-invitee referral attribution, self-referral protection, idempotent re
 - Stage 6D2B2A `44b3dc76...`, CI `34452143936`: partial migration publication caused migration-count failure; final passed at CP-013; no force/reset.
 - C3A `8040d4e3...`, CI `34458741101`: tests used in-memory SQLite incompatible with required WAL; production validation unchanged; fixed at CP-017.
 - C3B `470ecb81...`, CI `34459855904`: two misspelled HTTP status constants caused vet failure; repaired without behavior change.
-- 7A publish intermediate `bcac80e9...`: README was accidentally committed while intending to move a ref. No reset/force was used; the next commit restored the exact previous README blob. Net CP-018→7A diff contains only the six intended 7A files.
+- 7A publish intermediate `bcac80e9...`: README was accidentally committed while intending to move a ref. No reset/force was used; next commit restored the exact previous README blob; net feature diff was clean.
 - 7A `a7f83236...`, CI `34463953470`: Go + installer/Telemt E2E PASS; CP-019.
+- 7B1 `0ee6a2c0...`, CI `34465039914`: Go + installer/Telemt E2E PASS; CP-020.
 - Full local Go suite remains unavailable in the container because external module DNS is unavailable; GitHub CI is authoritative.
 
 ## Current next action
 
-Implement only Stage 7B1 from CP-019: protected Bot token loader, bounded Bot API client, strict update/start parsing, start application response, and Telemt user-link retrieval with focused tests. Do not wire webhook/network ingress until B1 is separately verified.
+Implement only Stage 7B2 from CP-020: authenticated bounded webhook ingress and optional Control Plane/config/Compose wiring using the verified B1 client/application. Do not provision Telemt users or add Forced Join/referrals until B2 is separately verified.
