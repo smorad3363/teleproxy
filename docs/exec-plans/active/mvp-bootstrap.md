@@ -3,7 +3,7 @@
 Status: ACTIVE
 Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
-Latest verified checkpoint: `e1df28fd16d59b3c08eff86ee6b23d579eaf199f`
+Latest verified checkpoint: `2abc393bf144b0e269d166a544f1df3277649ffa`
 
 ## Recovery contract
 
@@ -47,19 +47,16 @@ Non-negotiable architecture: SQLite WAL/NORMAL is authoritative Control Plane st
 - CP-033 Authenticated Web Admin referral reward settings API: `7fd1143723532a9d9a7ff5591c914b966b7e129f`, CI `34506809233` PASS.
 - CP-034 Referral history read model + authenticated Admin API: `80b02d1183edfb65163b7b7a5dfe1b3834a2de9a`, CI `34508958312` PASS.
 - CP-035 Sponsor Profile persistence/domain primitives: `e1df28fd16d59b3c08eff86ee6b23d579eaf199f`, CI `34510107359` PASS.
+- CP-036 Authenticated Sponsor Profile Admin CRUD API: `2abc393bf144b0e269d166a544f1df3277649ffa`, CI `34510993603` PASS.
 
-### CP-035 implemented
+### CP-036 implemented
 
-- additive migration `011_sponsor_profiles.sql` creates independent Sponsor Profile persistence without inventing a Node assignment table before a Node domain exists.
-- profiles persist name, Telegram channel username/link reference, canonical lowercase 32-hex `ad_tag`, enabled state, positive weight, optional start/end window, notes, and standard creation/update timestamps.
-- the domain supports create/get/list with deterministic ID ordering; `@username` references are canonicalized case-insensitively and Telegram `https://t.me/...` / `https://telegram.me/...` links are validated against the same safe-host principles already used by Forced Join.
-- duplicate canonical `ad_tag` values fail with a typed conflict; invalid names/channel references/ad tags/non-positive weights/zero timestamps/non-forward time windows/invalid or oversized notes fail before mutation.
-- schema constraints independently enforce canonical lowercase 32-hex ad tags, positive weights, booleans and forward time windows.
-- migration count advanced from 10 to 11; v5 legacy proxy/credit data and v9 referral attribution upgrade coverage remain intact, and rerunning migrations stays idempotent.
-- assigned nodes and statistics metadata were intentionally not given invented storage shapes: no Node domain/table exists yet, and the roadmap does not define the statistics metadata schema. Both remain additive later work.
-- no Sponsor Admin API, Bot UI, Telemt ad-tag projection, sticky assignment, assignment modes, Node compatibility/Middle Proxy enforcement or Sponsor audit mutation was added.
-- the final 8A diff is one atomic five-file commit: migration, Sponsor domain/tests, and the two migration-regression test updates.
-- candidate `e1df28fd16d59b3c08eff86ee6b23d579eaf199f` passed Format, Vet, full Go tests, installer syntax/unit tests, Docker prerequisites, and Telemt E2E/rerun in CI `34510107359`.
+- Sponsor domain now supports update/delete using the same CP-035 validation and canonicalization rules.
+- authenticated Admin JSON list/create/update/delete endpoints are wired through the existing session contract; create/update/delete require session-derived CSRF and bounded known-field JSON.
+- list is read-only/no-store; duplicate canonical `ad_tag`, invalid payloads and unknown IDs return safe typed errors without unintended mutation.
+- the final 8B net diff from the CP-035 docs head contains exactly five files: Sponsor domain manage/tests, Sponsor HTTP handler/tests, and one route-registration line in the existing constructor path.
+- no Web UI, Bot Admin UI, Node assignment, weighted/sticky allocation, Campaign routing, Telemt ad-tag projection, Node compatibility/Middle Proxy enforcement, statistics aggregation or Sponsor mutation audit was added.
+- candidate `2abc393bf144b0e269d166a544f1df3277649ffa` passed Format, Vet, full Go tests, installer syntax/unit tests, Docker prerequisites, and Telemt E2E/rerun in CI `34510993603`.
 
 ## Supplied source hashes
 
@@ -78,34 +75,32 @@ Telemt `3.5.7`, upstream commit `4ca7418442478cd92f9e861c21977a81b249efc8`.
 
 ## Active stage
 
-### Stage 8B — Authenticated Sponsor Profile Admin CRUD API — ACTIVE
+### Stage 8C — Web Panel Sponsor management surface — ACTIVE
 
-Roadmap basis: Sponsor Profiles are Control Plane-managed state, v1 includes multiple Sponsor Profiles plus Web Panel/Bot Admin, and the project requires near feature parity between Web Admin and Bot Admin. This milestone exposes the already-defined CP-035 profile semantics through the existing authenticated Admin API pattern only.
+Roadmap basis: Phase 5 Web Panel explicitly includes sponsors, and the repository already has authenticated server-rendered Web Panel primitives. CP-036 provides the authoritative Sponsor CRUD API, so this milestone adds only the smallest functional Web management surface without inventing Sponsor assignment semantics.
 
 Scope only:
-- add Sponsor domain update/delete operations reusing exactly the CP-035 validation/canonicalization rules;
-- expose authenticated Admin JSON list/create/update/delete endpoints through the existing session + CSRF contract;
-- list is read-only/no-store; create/update/delete require CSRF, bounded JSON, no unknown fields and safe typed errors;
-- preserve deterministic listing and duplicate-ad-tag conflict behavior;
-- no Web dashboard UI, Bot Admin UI, Node assignment, weighted/sticky allocation, Campaign routing, Telemt ad-tag projection, Node compatibility/Middle Proxy enforcement, statistics aggregation, or Sponsor mutation audit in 8B.
+- add an authenticated `/sponsors` Web page reachable from the existing dashboard;
+- render current Sponsor Profiles and provide create/edit/delete controls for CP-036 fields only;
+- reuse the existing session-derived CSRF token and CP-036 API endpoints for mutations rather than duplicating Sponsor business rules in page handlers;
+- preserve no-store behavior and safe HTML/template escaping;
+- no Node assignment, weighted/sticky allocation, Campaign routing, Telemt ad-tag projection, Node compatibility/Middle Proxy enforcement, Sponsor statistics, Bot Admin Sponsor UI or Sponsor audit mutation in 8C.
 
 Acceptance:
-- unauthenticated operations fail with existing Admin API auth behavior and state-changing calls require valid CSRF;
-- valid create/update/delete round-trip through the authoritative Sponsor store; list returns canonical persisted state;
-- malformed/unknown/oversized/invalid requests, conflicts and unknown IDs return safe typed problems without unintended mutation;
-- existing referral/proxy/quota behavior remains unchanged;
+- unauthenticated `/sponsors` redirects to login under the existing Web auth behavior;
+- authenticated page renders canonical Sponsor data and contains functional create/update/delete flows against the CP-036 API contract;
+- CSRF is not exposed outside the authenticated page and mutation requests include the existing session-derived `X-CSRF-Token`;
+- user-provided Sponsor fields are safely escaped when rendered;
+- existing Admin API, Bot, referral, proxy/quota and installer behavior remain unchanged;
 - format/vet/test and Docker/Telemt E2E remain green.
 
 ### Stage 7D2C — Exactly-once referral reward issuance — BLOCKED ON PRODUCT SEMANTICS
 
-Unresolved product contract:
-- the supplied English and Persian roadmaps define reward amount/expiry and invitee eligibility conditions but do not specify who receives the reward Credit Bucket: inviter, invitee, or both.
-- repository issue/code search found no product decision resolving that recipient as of CP-035.
-- do not infer a recipient from common referral conventions. Reward issuance remains blocked until this contract is explicit.
+The supplied English and Persian roadmaps define reward amount/expiry and invitee eligibility conditions but do not specify who receives the reward Credit Bucket: inviter, invitee, or both. Repository evidence has not resolved this. Do not infer a recipient.
 
 ### Stage 7D3B — Remaining minimum anti-abuse controls — BLOCKED ON PRODUCT SEMANTICS
 
-The roadmap requires configurable daily/weekly reward caps, cooldowns, blacklist, suspicious-score mechanism and admin mutation audit log. It does not specify cap scope/default values, cooldown semantics/default, blacklist subject, or suspicious-score inputs/threshold. Do not silently invent those product semantics. Referral history is complete at CP-034; remaining policy-bearing controls stay blocked until their contracts are explicit.
+The roadmap requires configurable daily/weekly reward caps, cooldowns, blacklist, suspicious-score mechanism and admin mutation audit log, but does not specify cap scope/default values, cooldown semantics/default, blacklist subject, or suspicious-score inputs/threshold. Do not invent those contracts.
 
 ## Important decisions
 
@@ -115,45 +110,25 @@ The roadmap requires configurable daily/weekly reward caps, cooldowns, blacklist
 - Telemt user view reconstructs proxy links from Telemt-managed secret; Control Plane does not persist MTProto plaintext.
 - Telegram `getChatMember` failures fail closed because membership for another user depends on correct Bot/channel permissions.
 - Forced Join gates gift and provisioning, not just link visibility; identity may exist with zero credit.
-- Forced Join management reuses authoritative domain validation.
 - Manual recheck callback data is fixed/non-secret; authoritative identity always comes from the Telegram update, not callback data.
 - Referral attribution must be durable before the Forced Join gap because recheck callback data intentionally carries no referral identity.
 - Production referral links reuse configured `TPROXY_BOT_USERNAME`; no extra token or runtime identity source is needed.
 - Eligibility approval is distinct from reward settlement: `pending + eligible_at` is approved but not rewarded.
 - Referral credit recipient semantics remain unresolved; do not issue referral rewards until repository/product evidence resolves inviter versus invitee versus both.
-- Anti-abuse controls are roadmap-required, but unspecified scope/default semantics are not inferred.
 - Sponsor Profile persistence is independent of assignment routing; assignment modes, sticky allocation, Telemt projection, compatibility and Middle Proxy enforcement remain separate later milestones.
-- Because no Node domain exists at CP-035, Sponsor-to-Node assignment persistence is intentionally deferred rather than anchored to a fabricated identity model.
+- No Node domain/table exists at CP-036, so Sponsor-to-Node assignment remains deferred rather than anchored to a fabricated identity model.
+- The existing Web Panel is server-rendered and minimal; 8C extends that existing surface rather than introducing a frontend framework.
 
 ## Validation/failure log
 
-- Stage 5 secret-mode/E2E harness failures repaired without weakening production validation.
-- Stage 6A port assertion/protected-token harness failures repaired.
-- Stage 6B format-only failure repaired at CP-007.
-- CP-012 superseded an otherwise-passing candidate after self-review found a missing future-start boundary.
-- CP-013 repaired a partial migration-count publication without reset/force.
-- C3A in-memory SQLite test was incompatible with required WAL; production unchanged.
-- C3B misspelled HTTP constant caused vet failure; repaired.
-- 7A accidental README intermediate commit was neutralized by restoring the exact prior blob in the next fast-forward, no reset/force.
-- 7B2 local test caught body-cap ambiguity before publish; oversized bodies now deterministically return 413.
-- 7B3A format-only transfer failure and 7B3B unused test import were repaired; production semantics unchanged.
-- CP-024 hardened Telegram join URLs against explicit ports before publish.
-- CP-025 pre-publish compile caught unsupported `testing.T.Context`; repaired before branch publication.
-- C2A produced two unattached mismatched Git blobs during transfer checks; neither was referenced by a tree/branch. Final six published SHAs matched local staging and CI `34482353102` passed.
-- C2B was published through seven coherent sequential fast-forward commits after an accidental direct `create_file` publication of `interactive.go`; no reset/force was used. Net diff from CP-027 contains exactly seven Telegram Bot files, and final CI `34490204497` passed.
-- C2B isolated local tests covered interactive transport/webhook behavior; production compile used type-compatible stubs because local Go is 1.23.2 while repository CI is authoritative for the full suite.
-- D1A intermediate schema commit `1efded4b6b583678637b3949b152bc2ab38c82ec` had Format/Vet PASS but `go test` failure in CI `34497018395`; subsequent migration-test update and D1A tests produced final candidate `989c32c234127e93879719a566046144201e6d18`, whose full CI `34497165310` passed.
-- D1B candidate `caf9bffd275ed2418b540773042875b8fe2d23fa` passed full CI `34497967471`.
-- CP-030 docs promotion `2ad01cb8bce7b6d489c62e8594cebe99ea1774cf` passed full CI `34498484861`.
-- D2A commit `5f96316f7ea58581dce0d8f8a312518fe595a42b` passed full CI `34505475099` on the first candidate.
-- CP-031 docs promotion `9f35a3ece67dd32717af1803a7b3c0fac03624d5` passed full CI `34505782176`.
-- D2B candidate `06dc77e0b18517179e0dea937a0612ed54bc356e` passed full CI `34505999351` on the first candidate; CP-032 docs promotion `8f268d0b6cfc336e91742383d991251ac49e1e9a` passed full CI `34506301685`.
-- D2B2 initial candidate `e50d7b299bd0793ed10f8764f8113f77eae09215` failed only the Format check in CI `34506528551`; Vet/Test and installer were skipped. Byte-level comparison showed `internal/httpapi/referral_settings_test.go` did not match the locally gofmt-clean source because raw JSON literals had been transferred with extra backslashes. No production source semantics were implicated. Fast-forward repair `7fd1143723532a9d9a7ff5591c914b966b7e129f` restored the exact local test blob SHA and passed full CI `34506809233`.
-- CP-033 docs promotion `09fe0924194b644306d49f3685ccb0d638af2690` passed full CI `34507182842`.
-- D3A was published as five coherent fast-forward commits ending at `80b02d1183edfb65163b7b7a5dfe1b3834a2de9a`; the net diff contains exactly the referral history domain/API scope, all new blobs matched local gofmt-clean Git hashes, and final full CI `34508958312` passed including Docker/Telemt E2E/rerun.
+- Prior format/test transfer failures were repaired without weakening production validation; no reset/force-push was used.
+- D2B2 initial candidate `e50d7b299bd0793ed10f8764f8113f77eae09215` failed only Format because a transferred test raw string gained extra backslashes; repair `7fd1143723532a9d9a7ff5591c914b966b7e129f` restored the exact gofmt-clean blob and passed full CI.
+- D3A final candidate `80b02d1183edfb65163b7b7a5dfe1b3834a2de9a` passed full CI `34508958312`.
 - CP-034 docs promotion `ba131d11b62e394bedc3e03b1af267981a14d5a0` passed full CI `34509372354`.
-- 8A candidate `e1df28fd16d59b3c08eff86ee6b23d579eaf199f` was published atomically as five files; local gofmt/Git blob hashes matched the published source, and full CI `34510107359` passed on the first candidate including Docker/Telemt E2E/rerun.
+- 8A candidate `e1df28fd16d59b3c08eff86ee6b23d579eaf199f` passed full CI `34510107359` on the first candidate.
+- CP-035 docs promotion `55ee6d8128f4a63925ce54744c0cf7c98a73d3b8` passed full CI `34510460750`.
+- 8B candidate `2abc393bf144b0e269d166a544f1df3277649ffa` passed full CI `34510993603` on the first candidate.
 
 ## Current next action
 
-Resume from CP-035. Verify the docs-head CI, then implement only Stage 8B: Sponsor domain update/delete plus authenticated Admin list/create/update/delete API using the existing session/CSRF/body-bound patterns. Do not implement assignment, Telemt projection, Sponsor audit, Web UI or Bot UI in this milestone.
+Resume from CP-036. Verify the CP-036 docs-head CI, then implement only Stage 8C: authenticated server-rendered Sponsor management page backed by the existing CP-036 API. Do not implement Sponsor assignment, Telemt projection, Bot Admin Sponsor UI or new Sponsor business semantics in this milestone.
