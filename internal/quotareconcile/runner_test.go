@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -278,7 +279,7 @@ func TestNearestBoundaryChoosesExpiryBeforeFutureStart(t *testing.T) {
 
 func runnerTestDB(t *testing.T) *sql.DB {
 	t.Helper()
-	db, err := database.Open(context.Background(), ":memory:")
+	db, err := database.Open(context.Background(), filepath.Join(t.TempDir(), "runner.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
