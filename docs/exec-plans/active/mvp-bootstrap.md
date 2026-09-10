@@ -3,7 +3,7 @@
 Status: ACTIVE
 Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
-Latest verified checkpoint: `7fd1143723532a9d9a7ff5591c914b966b7e129f`
+Latest verified checkpoint: `80b02d1183edfb65163b7b7a5dfe1b3834a2de9a`
 
 ## Recovery contract
 
@@ -45,15 +45,18 @@ Non-negotiable architecture: SQLite WAL/NORMAL is authoritative Control Plane st
 - CP-031 Referral eligibility persistence primitives: `5f96316f7ea58581dce0d8f8a312518fe595a42b`, CI `34505475099` PASS.
 - CP-032 Referral reward configuration primitives: `06dc77e0b18517179e0dea937a0612ed54bc356e`, CI `34505999351` PASS.
 - CP-033 Authenticated Web Admin referral reward settings API: `7fd1143723532a9d9a7ff5591c914b966b7e129f`, CI `34506809233` PASS.
+- CP-034 Referral history read model + authenticated Admin API: `80b02d1183edfb65163b7b7a5dfe1b3834a2de9a`, CI `34508958312` PASS.
 
-### CP-033 implemented
+### CP-034 implemented
 
-- authenticated `GET /api/referral/reward-settings` exposes the CP-032 settings with `Cache-Control: no-store`; unauthenticated requests reuse the existing `AUTH_REQUIRED` Admin API contract.
-- authenticated `PUT /api/referral/reward-settings` requires the existing session-derived `X-CSRF-Token`, accepts only bounded JSON with known `bytes`/`expiry_days` fields, rejects non-positive values, and round-trips through the authoritative settings store.
-- malformed, unknown-field, oversized, and invalid-value requests return safe typed problems and cannot mutate the stored reward configuration.
-- the API is wired through the existing production Control Plane constructor; it introduces no Telemt/Bot dependency and creates no referral attribution or Credit Bucket mutation.
-- the final D2B2 net diff contains only route registration plus the referral settings HTTP handler/tests.
-- candidate `7fd1143723532a9d9a7ff5591c914b966b7e129f` passed Format, Vet, full Go tests, installer syntax/unit tests, Docker prerequisites, and Telemt E2E/rerun in CI `34506809233`.
+- authoritative referral history is exposed through a bounded domain query over `referral_attributions`, joined only to existing Telegram identities for administrator-facing inviter/invitee identification.
+- history preserves stored attribution status, rejection reason, eligibility/finalization timestamps and created/updated timestamps; it derives no abuse score and exposes no referral code authority or secrets.
+- pagination is deterministic newest-first by attribution ID using optional positive `before_id`; default page size is 50, maximum is 100, and the query reads at most `limit + 1` rows to determine whether another page exists.
+- authenticated `GET /api/referral/history` reuses the existing Admin session contract, returns `Cache-Control: no-store`, and rejects invalid/repeated/unknown pagination parameters with a safe typed problem.
+- history reads do not mutate referral attributions, settings, or Credit Buckets.
+- the final D3A diff from the CP-033 docs head contains exactly five files: two referral history domain/test files, two HTTP history/test files, and one route-registration line in `referral_settings.go`.
+- all four new source/test blobs were byte-verified against locally gofmt-clean Git blobs before CI; no transfer corruption occurred.
+- candidate `80b02d1183edfb65163b7b7a5dfe1b3834a2de9a` passed Format, Vet, full Go tests, installer syntax/unit tests, Docker prerequisites, and Telemt E2E/rerun in CI `34508958312`.
 
 ## Supplied source hashes
 
@@ -72,35 +75,33 @@ Telemt `3.5.7`, upstream commit `4ca7418442478cd92f9e861c21977a81b249efc8`.
 
 ## Active stage
 
-### Stage 7D3A — Referral history read model + authenticated Admin API — ACTIVE
+### Stage 8A — Sponsor Profile persistence/domain primitives — ACTIVE
 
-Roadmap basis: referral history is an explicit minimum anti-abuse/admin requirement. Existing attribution data already contains the inviter/invitee relationship, status, eligibility/rejection/finalization timestamps and rejection reason, so a read-only history surface does not require inventing reward-recipient or scoring semantics.
+Roadmap-confirmed Sponsor Profile fields are ID, name, channel username/link, `ad_tag`, enabled, weight, assigned nodes, start time, end time, notes and statistics metadata. Multiple Sponsor Profiles must be supported concurrently. `ad_tag` must be exactly 32 hexadecimal characters and duplicate/invalid configurations must be prevented.
 
 Scope only:
-- add a bounded deterministic referral history read model over authoritative `referral_attributions`, joining existing Telegram identities only for administrator-facing identification;
-- expose authenticated read-only Admin JSON listing with stable newest-first pagination based on attribution ID and an optional bounded page size;
-- preserve status/rejection/eligibility/finalization data exactly as stored; no derived abuse score or inferred reward recipient;
-- return no referral code authority or secrets and perform no mutation;
-- no dashboard UI, Bot Admin UI, reward issuance, caps/cooldowns/blacklist policy semantics, or audit mutation work in D3A.
+- inspect existing node/schema/domain patterns first, then add the smallest additive Sponsor Profile persistence/domain primitive with explicit validation for name/channel reference/ad tag/enabled/weight/time window/notes;
+- preserve future assignment modes without prematurely implementing Global/Per Node/Per User/Weighted/Manual/Campaign routing semantics;
+- do not wire Telemt per-user ad tags, node compatibility, Middle Proxy enforcement, sticky assignment, statistics aggregation, Web/Bot Admin UI, or Sponsor mutation audit in this first milestone;
+- schema must remain additive/backward-compatible and support multiple profiles.
 
 Acceptance:
-- history is newest-first and pagination cannot skip/duplicate rows in a static dataset;
-- each row identifies inviter/invitee Telegram users plus persisted attribution state/timestamps;
-- unauthenticated access fails with existing Admin API auth behavior; authenticated reads are `no-store`;
-- invalid cursor/limit inputs fail safely and do not query unbounded data;
-- history reads create no Credit Bucket and mutate no attribution/settings state;
+- valid Sponsor Profiles can be created/read/listed with deterministic ordering;
+- `ad_tag` is normalized/validated as exactly 32 hexadecimal characters and duplicates fail safely;
+- invalid time windows/weights/channel references fail before mutation;
+- no existing proxy/referral/quota behavior changes;
 - format/vet/test and Docker/Telemt E2E remain green.
 
 ### Stage 7D2C — Exactly-once referral reward issuance — BLOCKED ON PRODUCT SEMANTICS
 
 Unresolved product contract:
 - the supplied English and Persian roadmaps define reward amount/expiry and invitee eligibility conditions but do not specify who receives the reward Credit Bucket: inviter, invitee, or both.
-- repository issue/code search found no product decision resolving that recipient as of CP-033.
+- repository issue/code search found no product decision resolving that recipient as of CP-034.
 - do not infer a recipient from common referral conventions. Reward issuance remains blocked until this contract is explicit.
 
-### Stage 7D3B — Remaining minimum anti-abuse controls — PRODUCT DETAILS PARTIAL
+### Stage 7D3B — Remaining minimum anti-abuse controls — BLOCKED ON PRODUCT SEMANTICS
 
-The roadmap requires configurable daily/weekly reward caps, cooldowns, blacklist, suspicious-score mechanism and admin mutation audit log. It does not specify cap scope/default values, cooldown semantics/default, blacklist subject, or suspicious-score inputs/threshold. Do not silently invent those product semantics; implement only evidence-backed pieces in small verified milestones.
+The roadmap requires configurable daily/weekly reward caps, cooldowns, blacklist, suspicious-score mechanism and admin mutation audit log. It does not specify cap scope/default values, cooldown semantics/default, blacklist subject, or suspicious-score inputs/threshold. Do not silently invent those product semantics. Referral history is complete at CP-034; remaining policy-bearing controls stay blocked until their contracts are explicit.
 
 ## Important decisions
 
@@ -117,6 +118,7 @@ The roadmap requires configurable daily/weekly reward caps, cooldowns, blacklist
 - Eligibility approval is distinct from reward settlement: `pending + eligible_at` is approved but not rewarded.
 - Referral credit recipient semantics remain unresolved; do not issue referral rewards until repository/product evidence resolves inviter versus invitee versus both.
 - Anti-abuse controls are roadmap-required, but unspecified scope/default semantics are not inferred.
+- Sponsor Profile persistence may be implemented before assignment routing; assignment modes, sticky allocation, Telemt projection, compatibility and Middle Proxy enforcement remain separate later milestones.
 
 ## Validation/failure log
 
@@ -142,7 +144,9 @@ The roadmap requires configurable daily/weekly reward caps, cooldowns, blacklist
 - CP-031 docs promotion `9f35a3ece67dd32717af1803a7b3c0fac03624d5` passed full CI `34505782176`.
 - D2B candidate `06dc77e0b18517179e0dea937a0612ed54bc356e` passed full CI `34505999351` on the first candidate; CP-032 docs promotion `8f268d0b6cfc336e91742383d991251ac49e1e9a` passed full CI `34506301685`.
 - D2B2 initial candidate `e50d7b299bd0793ed10f8764f8113f77eae09215` failed only the Format check in CI `34506528551`; Vet/Test and installer were skipped. Byte-level comparison showed `internal/httpapi/referral_settings_test.go` did not match the locally gofmt-clean source because raw JSON literals had been transferred with extra backslashes. No production source semantics were implicated. Fast-forward repair `7fd1143723532a9d9a7ff5591c914b966b7e129f` restored the exact local test blob SHA and passed full CI `34506809233`.
+- CP-033 docs promotion `09fe0924194b644306d49f3685ccb0d638af2690` passed full CI `34507182842`.
+- D3A was published as five coherent fast-forward commits ending at `80b02d1183edfb65163b7b7a5dfe1b3834a2de9a`; the net diff contains exactly the referral history domain/API scope, all new blobs matched local gofmt-clean Git hashes, and final full CI `34508958312` passed including Docker/Telemt E2E/rerun.
 
 ## Current next action
 
-Implement only Stage 7D3A from CP-033: bounded read-only referral history domain query plus authenticated Admin list API with deterministic ID pagination. Do not issue referral rewards or invent remaining anti-abuse policy defaults/scopes.
+Resume from CP-034. First inspect existing node/schema/domain patterns on the actual branch HEAD, then implement only Stage 8A Sponsor Profile persistence/domain primitives from the supplied roadmap. Keep referral reward issuance and policy-bearing anti-abuse controls blocked until their product semantics are explicit.
