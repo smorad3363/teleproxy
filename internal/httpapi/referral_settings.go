@@ -19,6 +19,7 @@ type referralRewardSettingsPayload struct {
 func (s *Server) registerReferralSettingsRoutes() {
 	s.mux.HandleFunc("GET /api/referral/reward-settings", s.handleReferralRewardSettingsGet)
 	s.mux.HandleFunc("PUT /api/referral/reward-settings", s.handleReferralRewardSettingsPut)
+	s.registerReferralHistoryRoutes()
 }
 
 func (s *Server) handleReferralRewardSettingsGet(w http.ResponseWriter, r *http.Request) {
