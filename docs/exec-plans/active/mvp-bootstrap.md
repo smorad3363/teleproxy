@@ -3,7 +3,7 @@
 Status: ACTIVE
 Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
-Latest verified checkpoint: `c2599bdedaffad413892769131ed925db0bec139`
+Latest verified checkpoint: `23d43eba64af94efcf2259b3a24b67a065c8db44`
 
 ## Recovery contract
 
@@ -50,17 +50,17 @@ Non-negotiable architecture: SQLite WAL/NORMAL is authoritative Control Plane st
 - CP-036 Authenticated Sponsor Profile Admin CRUD API: `2abc393bf144b0e269d166a544f1df3277649ffa`, CI `34510993603` PASS.
 - CP-037 Web Panel Sponsor management surface: `b16c08a5adcfdcf9a3ddaba9b6d9e5d85ab862c0`, CI `34518089493` PASS.
 - CP-038 Proxy Node identity/config persistence primitives: `c2599bdedaffad413892769131ed925db0bec139`, CI `34519237959` PASS.
+- CP-039 Authenticated Proxy Node Admin CRUD API: `23d43eba64af94efcf2259b3a24b67a065c8db44`, CI `34524258262` PASS.
 
-### CP-038 implemented
+### CP-039 implemented
 
-- additive migration `012_proxy_nodes.sql` creates static Proxy/Relay Node metadata without changing current runtime routing.
-- authoritative fields are node type (`proxy`/`relay`), stable case-insensitive unique name, region, host/IP, public host, MTProto port, internal API endpoint, enabled state and standard timestamps.
-- Node domain supports create/get/list with deterministic ID ordering and canonicalizes hostnames/IPs plus HTTP(S) API endpoints.
-- invalid types/names/regions/hosts/ports/endpoints and duplicate stable names fail safely; API endpoint userinfo, query and fragment are rejected so credentials/tokens are not accepted through that field.
-- Node schema contains no token/secret/password column; no API credential is persisted.
-- migration count advanced from 11 to 12 while v5 legacy data and v9 referral-upgrade regression coverage remain intact and migration reruns remain idempotent.
-- no health/version/heartbeat/activity/bandwidth telemetry, lifecycle actions, Sponsor assignment, Relay runtime, FakeTLS/mode/session limits, Admin Node API/UI, compose changes or multi-Telemt routing were added.
-- final 9A diff is one atomic five-file commit and candidate `c2599bdedaffad413892769131ed925db0bec139` passed Format, Vet, full Go tests, installer syntax/unit tests, Docker prerequisites and Telemt E2E/rerun in CI `34519237959`.
+- Node domain now supports full static-metadata update/delete while reusing CP-038 validation, canonicalization and case-insensitive stable-name conflict handling.
+- authenticated `GET/POST /api/nodes` and `PUT/DELETE /api/nodes/{id}` expose only authoritative static Node metadata.
+- list responses are `no-store`; mutations use the existing Admin session-derived CSRF contract; request JSON is bounded to 8 KiB and rejects unknown fields.
+- invalid input, duplicate names, unknown IDs, malformed JSON and oversized bodies return safe typed Problems without unintended mutation.
+- API tests cover authentication/CSRF, canonical CRUD round-trips, deterministic list ordering, failure non-mutation, and explicitly verify that CRUD never contacts a configured Node internal API endpoint.
+- no Node probes, telemetry, lifecycle/runtime actions, Sponsor assignment, Relay tunnel runtime, multi-Telemt routing, compose/installer changes, Web/Bot Node UI or Node audit mutation were added.
+- final 9B diff is one atomic five-file commit and candidate `23d43eba64af94efcf2259b3a24b67a065c8db44` passed Format, Vet, full Go tests, installer syntax/unit tests, Docker prerequisites and Telemt E2E/rerun in CI `34524258262`.
 
 ## Supplied source hashes
 
@@ -78,23 +78,24 @@ Telemt `3.5.7`, upstream commit `4ca7418442478cd92f9e861c21977a81b249efc8`.
 
 ## Active stage
 
-### Stage 9B — Authenticated Proxy Node Admin CRUD API — ACTIVE
+### Stage 9C — Web Panel Proxy Node metadata management surface — ACTIVE
 
-Roadmap basis: Web Panel/Bot Admin explicitly include Nodes, while CP-038 now provides authoritative static Node metadata. This milestone exposes only that metadata through the existing Admin API pattern; it does not test or control remote Nodes.
+Roadmap basis: Web Panel explicitly includes Proxy Nodes and CP-039 now exposes authoritative static Node metadata through the existing Admin API. Current runtime still targets one global Telemt service, so this milestone adds only a management surface for already-defined static metadata and does not invent Node runtime controls.
 
 Scope only:
-- add Node domain update/delete using exactly CP-038 validation/canonicalization;
-- expose authenticated `GET/POST /api/nodes` and `PUT/DELETE /api/nodes/{id}`;
-- list is `no-store`; create/update/delete require existing session-derived CSRF, bounded JSON and no unknown fields;
-- return safe typed invalid/conflict/not-found problems without mutation on failure;
-- no network probes, health/version/heartbeat telemetry, Enable/Disable/Drain/Restart/Update runtime actions, multi-Telemt routing, compose/installer changes, Sponsor assignment, Relay tunnel runtime, Web/Bot Node UI or Node audit mutation in 9B.
+- add authenticated server-rendered `/nodes` management using the existing minimal Web Panel pattern and no frontend framework;
+- list existing canonical Proxy/Relay Node records and provide create/edit/delete controls only for CP-038 static fields;
+- use the CP-039 `/api/nodes` endpoints with same-origin credentials and the existing session-derived CSRF token for mutations;
+- safely display returned Problem messages and require explicit delete confirmation;
+- add the smallest Dashboard/navigation link needed to reach Node management;
+- no Node Test/status/health/version/heartbeat telemetry, Restart/Update/Enable/Disable/Drain runtime actions, maintenance orchestration, Sponsor assignment, FakeTLS/mode/session-limit controls, Relay tunnel runtime, multi-Telemt routing, compose/installer changes, Bot Node UI or Node audit mutation in 9C.
 
 Acceptance:
-- authenticated CRUD round-trips canonical CP-038 metadata and deterministic list ordering;
-- unauthenticated calls fail under the existing Admin API contract and mutations reject missing/invalid CSRF;
-- malformed/unknown/oversized/invalid requests, duplicate names and unknown IDs fail safely without unintended mutation;
-- no Node API operation contacts the configured internal API endpoint or changes current Telemt runtime state;
-- existing Sponsor/referral/proxy/quota behavior remains unchanged;
+- unauthenticated Web access redirects to `/login` under existing session behavior;
+- authenticated page renders deterministic canonical Node data and a clear empty state without exposing secrets;
+- create/edit/delete controls send the complete CP-039 static payload with CSRF and surface safe API errors;
+- page rendering and JavaScript do not contact configured Node internal API endpoints; only same-origin Control Plane `/api/nodes` is used for mutations;
+- existing Sponsor/referral/proxy/quota runtime behavior remains unchanged;
 - format/vet/test and Docker/Telemt E2E remain green.
 
 ### Stage 7D2C — Exactly-once referral reward issuance — BLOCKED ON PRODUCT SEMANTICS
@@ -114,7 +115,7 @@ Roadmap requires configurable daily/weekly caps, cooldowns, blacklist and suspic
 - Forced Join gates gift and provisioning; referral attribution is durable before the Forced Join recheck gap.
 - Referral credit recipient semantics remain unresolved; do not issue referral rewards.
 - Sponsor Profile persistence is independent of assignment routing; sticky/weighted assignment and Telemt projection remain separate later milestones.
-- CP-038 introduces Node metadata only. `TPROXY_TELEMT_API_URL`, current compose topology and quota reconciliation still target one global Telemt service.
+- CP-039 exposes Node static metadata only. `TPROXY_TELEMT_API_URL`, current compose topology and quota reconciliation still target one global Telemt service.
 - Relay records are schema-readiness metadata only; no Iran Relay tunnel runtime exists yet.
 - Existing Web Panel remains server-rendered/minimal; do not introduce a frontend framework for isolated management surfaces.
 
@@ -128,7 +129,8 @@ Roadmap requires configurable daily/weekly caps, cooldowns, blacklist and suspic
 - CP-037 candidate `b16c08a5...` CI `34518089493` PASS; docs `bb0e2308...` CI `34518442647` PASS.
 - CP-038 candidate `c2599bde...` CI `34519237959` PASS on the first candidate. One initial unattached `create_commit` call was tool-blocked before any branch move; the same atomic tree was then committed normally and fast-forwarded. No repository state was lost or rewritten.
 - CP-038 promotion commit `b930b1f3...` contained a documentation-only typo in the historical CP-010 SHA; it was immediately repaired in the next fast-forward docs commit before any 9B code publication.
+- CP-039 candidate `23d43eba...` CI `34524258262` PASS on the first candidate; full Go and installer/Docker/Telemt E2E validation succeeded with no repair commit required.
 
 ## Current next action
 
-Verify the repaired CP-038 docs-head CI. Then implement only Stage 9B from CP-038: Node update/delete plus authenticated static metadata CRUD API. Keep current single-Telemt runtime routing, installer/compose, Sponsor assignment, Node runtime/lifecycle actions and blocked referral reward semantics unchanged.
+Verify the CP-039 promotion docs-head CI. Then implement only Stage 9C: authenticated server-rendered Node static-metadata management backed by the CP-039 API. Keep Node probes/telemetry/runtime actions, Sponsor assignment, Relay runtime, multi-Telemt routing, installer/compose changes and blocked referral reward semantics unchanged.
