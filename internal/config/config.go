@@ -5,6 +5,7 @@ import (
 	"net"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -24,6 +25,9 @@ type Config struct {
 	TelemtAPIURL          string
 	TelemtAPITokenFile    string
 	ReconcileConcurrency  int
+	BotTokenFile          string
+	BotWebhookSecretFile  string
+	BotUsername           string
 	ReadHeaderTimeout     time.Duration
 	ReadTimeout           time.Duration
 	WriteTimeout          time.Duration
@@ -49,6 +53,9 @@ func Load() (Config, error) {
 		TelemtAPIURL:          os.Getenv("TPROXY_TELEMT_API_URL"),
 		TelemtAPITokenFile:    os.Getenv("TPROXY_TELEMT_API_TOKEN_FILE"),
 		ReconcileConcurrency:  reconcileConcurrency,
+		BotTokenFile:          os.Getenv("TPROXY_BOT_TOKEN_FILE"),
+		BotWebhookSecretFile:  os.Getenv("TPROXY_BOT_WEBHOOK_SECRET_FILE"),
+		BotUsername:           os.Getenv("TPROXY_BOT_USERNAME"),
 		ReadHeaderTimeout:     5 * time.Second,
 		ReadTimeout:           15 * time.Second,
 		WriteTimeout:          30 * time.Second,
@@ -66,6 +73,20 @@ func Load() (Config, error) {
 	}
 	if (cfg.TelemtAPIURL == "") != (cfg.TelemtAPITokenFile == "") {
 		return Config{}, fmt.Errorf("TPROXY_TELEMT_API_URL and TPROXY_TELEMT_API_TOKEN_FILE must be configured together")
+	}
+	botFields := 0
+	for _, value := range []string{cfg.BotTokenFile, cfg.BotWebhookSecretFile, cfg.BotUsername} {
+		if value != "" {
+			botFields++
+		}
+	}
+	if botFields != 0 && botFields != 3 {
+		return Config{}, fmt.Errorf("TPROXY_BOT_TOKEN_FILE, TPROXY_BOT_WEBHOOK_SECRET_FILE and TPROXY_BOT_USERNAME must be configured together")
+	}
+	if botFields == 3 {
+		if err := validateBotUsername(cfg.BotUsername); err != nil {
+			return Config{}, fmt.Errorf("TPROXY_BOT_USERNAME: %w", err)
+		}
 	}
 
 	return cfg, nil
@@ -117,5 +138,19 @@ func validateAddr(addr string) error {
 		return fmt.Errorf("port must be between 1 and 65535")
 	}
 
+	return nil
+}
+
+func validateBotUsername(value string) error {
+	value = strings.TrimPrefix(value, "@")
+	if len(value) < 1 || len(value) > 64 {
+		return fmt.Errorf("must contain between 1 and 64 characters")
+	}
+	for _, ch := range value {
+		if (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_' {
+			continue
+		}
+		return fmt.Errorf("contains unsupported characters")
+	}
 	return nil
 }

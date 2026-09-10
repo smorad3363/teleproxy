@@ -16,8 +16,11 @@ import (
 	"github.com/smorad3363/teleproxy/internal/database"
 	"github.com/smorad3363/teleproxy/internal/httpapi"
 	"github.com/smorad3363/teleproxy/internal/quotareconcile"
+	"github.com/smorad3363/teleproxy/internal/telegrambot"
 	"github.com/smorad3363/teleproxy/internal/telemt"
 )
+
+const telegramWebhookPath = "/telegram/webhook"
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
@@ -93,9 +96,33 @@ func run(logger *slog.Logger) error {
 	}
 
 	api := httpapi.NewWithProxyServices(db, httpapi.Options{CookieSecure: cfg.CookieSecure}, proxyClient, quotaRunner)
+	var handler http.Handler = api.Handler()
+	if cfg.BotTokenFile != "" {
+		botClient, err := telegrambot.NewFromTokenFile(cfg.BotTokenFile, 3*time.Second)
+		if err != nil {
+			return fmt.Errorf("configure Telegram Bot client: %w", err)
+		}
+		webhookSecret, err := telegrambot.LoadWebhookSecretFile(cfg.BotWebhookSecretFile)
+		if err != nil {
+			return fmt.Errorf("configure Telegram webhook authentication: %w", err)
+		}
+		startApplication, err := telegrambot.NewStartApplication(db, cfg.BotUsername, nil)
+		if err != nil {
+			return fmt.Errorf("configure Telegram start application: %w", err)
+		}
+		webhook, err := telegrambot.NewWebhookHandler(webhookSecret, startApplication, botClient)
+		if err != nil {
+			return fmt.Errorf("configure Telegram webhook: %w", err)
+		}
+		root := http.NewServeMux()
+		root.Handle(telegramWebhookPath, webhook)
+		root.Handle("/", handler)
+		handler = root
+	}
+
 	server := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           api.Handler(),
+		Handler:           handler,
 		ReadHeaderTimeout: cfg.ReadHeaderTimeout,
 		ReadTimeout:       cfg.ReadTimeout,
 		WriteTimeout:      cfg.WriteTimeout,
