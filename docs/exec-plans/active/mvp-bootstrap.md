@@ -3,7 +3,7 @@
 Status: ACTIVE
 Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
-Latest verified checkpoint: `bad15c07f439ff3d90945b08fb75eb9690160c58`
+Latest verified checkpoint: `523d13000bd26f1eeb1f4bc3ad6a40a3ca0ea57b`
 
 ## Recovery contract
 
@@ -39,16 +39,17 @@ Non-negotiable architecture: SQLite WAL/NORMAL is authoritative Control Plane st
 - CP-025 Telegram membership + split start primitives: `8e172246c3f7c4c656ead73424b1fcc9a3330d77`, CI `34477880363` PASS.
 - CP-026 membership-gated Telegram start: `dd0656d8ea1725ab4a9de68899ae474031590ee2`, CI `34480254706` PASS.
 - CP-027 Forced Join authenticated Admin CRUD API: `bad15c07f439ff3d90945b08fb75eb9690160c58`, CI `34482353102` PASS.
+- CP-028 Forced Join manual recheck UX: `523d13000bd26f1eeb1f4bc3ad6a40a3ca0ea57b`, CI `34490204497` PASS.
 
-### CP-027 implemented
+### CP-028 implemented
 
-- `forcedjoin` management domain now exposes validated list-all/get/update/delete while preserving CP-024 read-time validation and deterministic `position,id` ordering.
-- duplicate Telegram chat references are typed `ErrConflict`; missing channel IDs are typed `ErrNotFound`; API code never parses raw SQLite error text.
-- authenticated admin routes: `GET/POST /api/forced-join/channels`, `PUT/DELETE /api/forced-join/channels/{id}`.
-- reads require an administrator session; all mutations additionally require existing `X-CSRF-Token` validation.
-- create/update use one shared domain validator, bounded 16 KiB JSON, unknown-field rejection, explicit enabled/required/position fields, and shared Problem Details error responses.
-- list includes disabled/optional records for management and returns deterministic JSON `[]` when empty; update preserves identity/created_at; delete affects only the selected row.
-- production constructor now registers the management routes; no migration, Bot secret, callback, referral, or entitlement behavior changed.
+- missing-channel Bot responses now use inline keyboards with one validated Telegram join URL button per missing channel and a fixed `forced_join_recheck` callback button; callback data contains no user/resource/entitlement or secret data and stays below Telegram's 64-byte limit.
+- Bot client supports bounded `sendMessage` with inline keyboard and `answerCallbackQuery`; transport/network/API failures reuse sanitized error codes and never expose token-bearing Bot API URLs or upstream response descriptions.
+- `Update` parses only the callback-query fields required for manual recheck.
+- recheck accepts only the fixed callback token from a non-bot user, with an existing Teleproxy identity and a private callback message whose `chat.id` equals `callback_query.from.id`; forged/malformed/group/inline-only/unknown-user contexts perform no gift/provisioning mutation.
+- recheck reuses the CP-026 Forced Join gate and the idempotent `EnsureStartGift`/CP-023 provisioning path; repeated callbacks cannot create a second start gift or duplicate provisioning ownership.
+- handled callbacks are answered on success, still-missing membership, and membership/application-error paths so Telegram clients do not remain loading; callback application errors return webhook success and remain fail-closed for entitlement so users retry explicitly rather than through ambiguous Telegram update replay.
+- ordinary blocked `/start` also renders join/recheck controls; legacy senders without inline-keyboard capability retain the prior plain-text fallback.
 
 ## Supplied source hashes
 
@@ -67,32 +68,36 @@ Telemt `3.5.7`, upstream commit `4ca7418442478cd92f9e861c21977a81b249efc8`.
 
 ## Active stage
 
-### Stage 7C2B — Telegram manual Forced Join recheck UX — ACTIVE
+### Stage 7D1A — Referral identity + pending attribution domain — ACTIVE
 
-Roadmap basis: Forced Join supports custom join messaging and a manual membership recheck. Build this only on the verified CP-026 gated start and CP-027 management API.
+Roadmap basis: `/start` resolves a referral code after creating a new Telegram user and before Forced Join; a valid referral requires a new invitee, no prior reward for that invitee, no self-referral, anti-abuse approval, and completed Forced Join. The roadmap also requires a unique constraint per invitee, idempotent reward creation, referral history, and a user-visible referral link/count.
 
 Scope only:
-- add minimal inline-keyboard support to Bot `sendMessage` so missing-channel responses can show one safe Telegram join URL button per missing channel plus one recheck callback button
-- extend `Update` only with the CallbackQuery fields needed for recheck; callback data is a fixed bounded non-secret token, never an entitlement, Telegram ID, proxy username, or secret
-- process recheck only from an authenticated Telegram webhook update, using `callback_query.from.id` as the authoritative user identity and the callback message private chat as the destination
-- add `answerCallbackQuery` support; always answer handled callback queries so Telegram clients do not remain in loading state
-- reuse the same Forced Join gate and idempotent `EnsureStartGift`/CP-023 provisioning path; repeated callbacks cannot duplicate the initial gift or provisioning ownership
-- malformed/forged callback data, missing message context, group/inline-only callbacks, bot senders, or mismatched chat/user identity must not grant/provision
-- membership API errors remain fail-closed; user may retry later
-- no edit-message requirement, referral/reward logic, broad Bot menus, or new DB migration/secrets in C2B
+- additive migration for one stable opaque referral code per Telegram user and at most one referral attribution per invitee
+- generate referral codes with cryptographic randomness, bounded URL-safe characters, and a DB unique constraint; never derive security-sensitive authority from the code
+- attribution records inviter/invitee and starts as `pending`; this milestone creates no Credit Bucket and does not decide reward eligibility
+- accept attribution only for a newly resolved invitee; reject self-referral and unknown/invalid codes with typed safe outcomes; replay must never change an existing invitee attribution
+- preserve referral history/status fields needed for later `pending -> rewarded/rejected` transitions without implementing those transitions yet
+- expose read primitives for referral code, attribution, and inviter referral count suitable for later Bot response wiring
+- no reward issuance, Forced Join integration, caps/cooldowns/blacklist scoring, admin UI/API, Bot callback changes, or sponsor work in D1A
 
 Acceptance:
-- missing-channel `/start` sends join URL controls and a recheck control without granting/provisioning
-- after membership becomes valid, recheck grants exactly the existing one-time start gift and continues verified provisioning
-- replaying the same callback is idempotent
-- callback query is answered on handled success/missing-membership/error paths; Bot API failures are sanitized and token-bearing URLs never leak
-- callback data stays within Telegram's 1-64 byte limit and contains no user/resource entitlement data
-- unsafe callback contexts do not mutate credit/provisioning state
-- zero required channels and ordinary `/start` behavior remain unchanged
-- format/vet/test and Docker/Telemt E2E remain green
+- one code per inviter and code uniqueness are enforced under replay/concurrency
+- one attribution per invitee is enforced by schema/domain; self-referral cannot be persisted
+- only `ResolveResult.Created=true` callers can create a new attribution through the public API
+- invalid/unknown referral payloads cannot mutate attribution state
+- pending attribution survives the Forced Join gap so a later callback can finalize eligibility without carrying referral data in callback_data
+- referral count excludes pending/rejected records until later reward completion semantics are implemented
+- migration upgrade/rerun, format/vet/test and Docker/Telemt E2E remain green
 
-### Stage 7D — Referrals + rewards — PENDING
-Unique-per-invitee attribution, self-referral protection, idempotent reward Credit Buckets, configurable reward/expiry/caps, and Forced-Join eligibility integration.
+### Stage 7D1B — `/start` referral resolution wiring — PENDING
+Parse the roadmap referral payload before Forced Join, persist pending attribution only for a newly-created invitee, keep callback data fixed/non-secret, and surface the user's stable referral link/count without issuing a reward yet.
+
+### Stage 7D2 — Referral eligibility + idempotent reward Credit Bucket — PENDING
+Finalize pending referral only after Forced Join/anti-abuse checks. Implement exactly-once reward Credit Bucket, configurable byte amount/expiry and typed rejected reasons. The supplied roadmap states a default `2GB / 14 days` referral reward but does not explicitly say whether that bucket belongs to inviter, invitee, or both; resolve this from repository/product evidence before issuing credits rather than silently guessing.
+
+### Stage 7D3 — Minimum anti-abuse controls + admin configuration/history — PENDING
+Add the roadmap-required configurable caps/cooldowns/blacklist/history surfaces in small verified milestones. Suspicious scoring remains explicit and server-side, never a client-only decision.
 
 ## Important decisions
 
@@ -104,6 +109,7 @@ Unique-per-invitee attribution, self-referral protection, idempotent reward Cred
 - Forced Join gates gift and provisioning, not just link visibility; identity may exist with zero credit.
 - Forced Join management reuses authoritative domain validation.
 - Manual recheck callback data is fixed/non-secret; authoritative identity always comes from the Telegram update, not callback data.
+- Referral attribution must be durable before the Forced Join gap because recheck callback data intentionally carries no referral identity.
 
 ## Validation/failure log
 
@@ -120,8 +126,9 @@ Unique-per-invitee attribution, self-referral protection, idempotent reward Cred
 - CP-024 hardened Telegram join URLs against explicit ports before publish.
 - CP-025 pre-publish compile caught unsupported `testing.T.Context`; repaired before branch publication.
 - C2A produced two unattached mismatched Git blobs during transfer checks; neither was referenced by a tree/branch. Final six published SHAs matched local staging and CI `34482353102` passed.
-- Full local Go suite remains unavailable because external module DNS is blocked in the container; GitHub CI is authoritative.
+- C2B was published through seven coherent sequential fast-forward commits after an accidental direct `create_file` publication of `interactive.go`; no reset/force was used. Net diff from CP-027 contains exactly seven Telegram Bot files, and final CI `34490204497` passed.
+- C2B isolated local tests covered interactive transport/webhook behavior; production compile used type-compatible stubs because local Go is 1.23.2 while repository `go.mod` is Go 1.26. GitHub CI is authoritative for the full suite.
 
 ## Current next action
 
-Implement only Stage 7C2B from CP-027. Do not start referrals/rewards until manual Forced Join recheck is separately verified.
+Implement only Stage 7D1A from CP-028. Do not wire referral payloads into `/start` or issue any referral reward until D1A is separately verified.
