@@ -9,6 +9,7 @@ import (
 )
 
 func (s *Server) registerUserAdminRoutes() {
+	s.mux.HandleFunc("GET /users", s.handleUserAdminPage)
 	s.mux.HandleFunc("GET /api/users", s.handleUserAdminList)
 }
 
