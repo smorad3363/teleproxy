@@ -3,7 +3,7 @@
 Status: ACTIVE
 Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
-Latest verified checkpoint: `3664c7ce93264b4036ee87a1862aa1ae3634c41a`
+Latest verified checkpoint: `a7f83236a797120d2f5f34d8201a7de73b0b959f`
 
 ## Purpose
 
@@ -44,17 +44,18 @@ On interruption: read this plan; compare branch head with `Latest verified check
 - CP-016 callable crash-safe reconciler: `23a9eb92fade84b66aa6ec7f4cce96f37de21325`, CI `34456452874` PASS.
 - CP-017 bounded reconciliation runner core: `5505a1e981270f38474cfbaccb40a8abc23e50e9`, CI `34458886839` PASS.
 - CP-018 Control Plane reconciliation wiring: `3664c7ce93264b4036ee87a1862aa1ae3634c41a`, CI `34462985548` PASS.
+- CP-019 Telegram identity + idempotent start-gift foundation: `a7f83236a797120d2f5f34d8201a7de73b0b959f`, CI `34463953470` PASS.
 
-### CP-018 implemented
+### CP-019 implemented
 
-- configurable bounded reconciliation concurrency is wired through config and Compose
-- startup queues existing proxy users without making Control Plane startup depend on Telemt convergence
-- authenticated + CSRF-protected manual reconciliation endpoint is available
-- create/enable paths remain fail-closed: when the runner exists, Telemt stays disabled until quota projection has converged
-- create preserves the reveal-once secret even if later queueing fails
-- enable/disable queue reconciliation; rotate-secret remains independent
-- runner shutdown cancels timers/work and is waited with a bounded context before DB close
-- sync failures persist only narrow codes
+- additive migration 006 creates `telegram_users` with unique Telegram identity and one-to-one proxy-user mapping
+- non-secret typed `start_gift_bytes` setting defaults to decimal 100MB (`100_000_000` bytes)
+- `/start` domain bootstrap is one SQLite transaction: proxy user, Telegram mapping and initial Credit Bucket succeed or roll back together
+- deterministic proxy usernames are derived from positive Telegram IDs, not display names
+- initial gift carries a per-user idempotency key; concurrent/repeated starts produce one user/mapping/gift
+- changing start-gift setting affects only future new users; replay returns the originally granted amount
+- migration upgrade test proves v5 proxy/credit rows survive migration 006 with legacy `idempotency_key` left NULL
+- no Telegram network transport or bot token exists yet
 
 ## Supplied source hashes
 
@@ -71,30 +72,31 @@ Telemt 3.5.7, upstream commit `4ca7418442478cd92f9e861c21977a81b249efc8`:
 
 ## Active stage
 
-### Stage 7A — Telegram identity + idempotent start-gift domain — ACTIVE
+### Stage 7B1 — Telegram Bot API client + safe command/update core — ACTIVE
 
-Roadmap basis: Phase 3 begins with `/start`; the flow resolves Telegram identity, creates a user only when new, creates the initial gift exactly once, then later resolves Forced Join/referrals/proxy links. Start gift must be configurable; default is 100MB.
+Roadmap basis: Phase 3 requires Telegram Bot `/start` and user menu. Production webhook is preferred later and webhook secret authentication is required; this milestone first verifies transport/client contracts independently from HTTP webhook wiring.
 
 Scope only:
-- add durable Telegram-user identity mapped one-to-one to a proxy user
-- add a typed non-secret setting for configurable `start_gift_bytes` with safe default 100MB
-- add an idempotent transactional start/bootstrap application service: repeated `/start` for the same Telegram ID never creates another user or gift
-- create the initial Credit Bucket with an explicit idempotency key/source suitable for audit/recovery
-- generate a deterministic safe proxy username from Telegram ID; never use Telegram display names as identity
-- retain existing Credit Bucket ledger as the single quota/reward truth
-- no Telegram network transport/token/webhook, referral reward, Forced Join, sponsor, Bot Admin, or broad Web UI in this milestone
+- add protected-file Bot token loader with strict file-permission checks; never store token in SQLite or logs
+- add narrow Telegram Bot API client for `sendMessage` using bounded HTTP timeouts/body limits and sanitized typed errors
+- add strict update/message structs and `/start` command parser with optional payload extraction
+- add a start application handler that invokes the verified `telegramuser.Start` service and produces a safe domain response containing Telegram identity, proxy username and current start-gift state
+- add Telemt user-link retrieval client support based on upstream user views so existing users can later receive proxy links without Control Plane storing plaintext MTProto secrets
+- no webhook HTTP endpoint, Bot token config wiring, Telemt user creation, Forced Join, referrals, sponsor or Bot Admin in B1
 
 Acceptance:
-- concurrent/repeated bootstrap for one Telegram ID yields one Telegram user, one proxy user and one start-gift bucket
-- different Telegram IDs cannot map to the same proxy user
-- invalid/non-positive Telegram IDs and invalid gift settings are rejected
-- changing the configured start gift affects only future new users, never re-grants existing users
-- no secret material is added to SQLite
-- migrations are additive/rerun-safe; old database migration tests are updated
-- Go format/vet/test and existing Docker/Telemt E2E remain green
+- token files must be regular, owner-readable only and non-empty; token value never appears in errors
+- Telegram API non-2xx/malformed/oversized responses map to narrow errors without response-body leakage
+- `/start`, `/start@botname` and optional payload parse deterministically; unrelated messages are ignored
+- repeated start handling remains idempotent through CP-019 service
+- Telemt link retrieval validates username/output and returns link strings but never exposes/stores raw secret fields
+- Go format/vet/test and installer/Telemt E2E stay green
 
-### Stage 7B — Telegram Bot transport + `/start` response — PENDING
-After 7A verification: add a narrow Bot API client/transport around the verified start service, token from a protected secret file only, safe update parsing/rate limits, and a user-facing start/menu response. Forced Join/referrals stay separate.
+### Stage 7B2 — Authenticated webhook + Control Plane wiring — PENDING
+After B1 verification: add Telegram webhook endpoint with Telegram secret-token verification, request-size/rate bounds, config from protected token/secret files, Bot API sending, startup-safe lifecycle wiring and tests. Keep Forced Join/referrals separate.
+
+### Stage 7B3 — Proxy provisioning/link response — PENDING
+After webhook transport is verified: create missing Telemt user fail-closed, trigger quota reconciliation, retrieve Telemt-generated links and return user menu/status without storing MTProto secrets.
 
 ### Stage 7C — Forced Join — PENDING
 Configurable required channels, membership checks, manual recheck, and fail-safe user messaging.
@@ -108,8 +110,9 @@ Unique-per-invitee referral attribution, self-referral protection, idempotent re
 - Telemt disable cancels active sessions and blocks new admission, so it is the fail-closed freeze primitive.
 - Quota `0` means blocked, not unlimited.
 - SQLite stays single-connection in MVP so connection-scoped PRAGMAs remain reliable.
-- Roadmap Phase 3 order is Bot start/user menu, Forced Join, referrals/rewards, proxy links; implementation is split into smaller independently verified milestones.
-- Bot token is a secret and will not be stored as an ordinary SQLite setting in 7A.
+- Roadmap Phase 3 order is Bot start/user menu, Forced Join, referrals/rewards, proxy links; implementation is split into independently verified milestones.
+- Bot token is a secret and is read from a protected file rather than ordinary SQLite settings.
+- Pinned Telemt user views reconstruct `tg://proxy` links from Telemt-managed user secrets, so Control Plane can display links later without persisting plaintext MTProto secrets itself.
 
 ## Validation/failure log
 
@@ -121,10 +124,11 @@ Unique-per-invitee referral attribution, self-referral protection, idempotent re
 - Stage 6D2B1 `86090aba...`, CI `34449178722`: PASS but superseded after self-review found missing future-start boundary; repaired at CP-012.
 - Stage 6D2B2A `44b3dc76...`, CI `34452143936`: partial migration publication caused migration-count failure; final passed at CP-013; no force/reset.
 - C3A `8040d4e3...`, CI `34458741101`: tests used in-memory SQLite incompatible with required WAL; production validation unchanged; fixed at CP-017.
-- C3B `470ecb81...`, CI `34459855904`: two misspelled `http.StatusServiceUnavailable` constants caused vet failure; repaired without behavior change.
-- C3B repair `3664c7ce...`, CI `34462985548`: Go + installer/Telemt E2E PASS; CP-018.
+- C3B `470ecb81...`, CI `34459855904`: two misspelled HTTP status constants caused vet failure; repaired without behavior change.
+- 7A publish intermediate `bcac80e9...`: README was accidentally committed while intending to move a ref. No reset/force was used; the next commit restored the exact previous README blob. Net CP-018→7A diff contains only the six intended 7A files.
+- 7A `a7f83236...`, CI `34463953470`: Go + installer/Telemt E2E PASS; CP-019.
 - Full local Go suite remains unavailable in the container because external module DNS is unavailable; GitHub CI is authoritative.
 
 ## Current next action
 
-Implement only Stage 7A from CP-018: additive Telegram identity/settings schema plus an idempotent transactional start-gift service and focused concurrency/replay tests. Do not add Telegram network transport until 7A is separately verified.
+Implement only Stage 7B1 from CP-019: protected Bot token loader, bounded Bot API client, strict update/start parsing, start application response, and Telemt user-link retrieval with focused tests. Do not wire webhook/network ingress until B1 is separately verified.
