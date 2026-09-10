@@ -41,8 +41,8 @@ func TestOpenAppliesSQLiteInvariantsAndMigrations(t *testing.T) {
 	if err := db.QueryRow("SELECT COUNT(*) FROM schema_migrations").Scan(&migrations); err != nil {
 		t.Fatalf("count migrations: %v", err)
 	}
-	if migrations != 2 {
-		t.Fatalf("migration count = %d, want 2", migrations)
+	if migrations != 3 {
+		t.Fatalf("migration count = %d, want 3", migrations)
 	}
 
 	if err := Migrate(ctx, db); err != nil {
@@ -51,8 +51,8 @@ func TestOpenAppliesSQLiteInvariantsAndMigrations(t *testing.T) {
 	if err := db.QueryRow("SELECT COUNT(*) FROM schema_migrations").Scan(&migrations); err != nil {
 		t.Fatalf("count migrations after rerun: %v", err)
 	}
-	if migrations != 2 {
-		t.Fatalf("migration count after rerun = %d, want 2", migrations)
+	if migrations != 3 {
+		t.Fatalf("migration count after rerun = %d, want 3", migrations)
 	}
 }
 
