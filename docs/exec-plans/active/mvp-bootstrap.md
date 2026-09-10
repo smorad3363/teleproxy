@@ -3,7 +3,7 @@
 Status: ACTIVE
 Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
-Latest verified checkpoint: `5f513acd1849313beee05cd739640aad4b507e7a`
+Latest verified checkpoint: `64dece67e2e0b9e2c2a9e2653b6fee42921c4450`
 
 ## Recovery contract
 
@@ -55,6 +55,7 @@ Non-negotiable architecture: SQLite WAL/NORMAL is authoritative Control Plane st
 - CP-041 Web Panel referral reward settings + history surface: `bb6d6f98e8cf8e8806e7e5210dcbbb9a2fe31228`, CI `34529186492` PASS.
 - CP-042 Web Panel Forced Join management surface: `4b28df5b30e1686a0f43400df7425e400b5951b6`, CI `34530056110` PASS.
 - CP-043 Authenticated read-only User inventory API: `5f513acd1849313beee05cd739640aad4b507e7a`, CI `34541388012` PASS.
+- CP-044 Web Panel read-only User inventory surface: `64dece67e2e0b9e2c2a9e2653b6fee42921c4450`, CI `34541946964` PASS.
 
 ### CP-042 implemented
 
@@ -77,6 +78,16 @@ Non-negotiable architecture: SQLite WAL/NORMAL is authoritative Control Plane st
 - no Telegram/Telemt calls, secrets, user mutation actions, Telegram username inference, Node/Sponsor assignment, traffic/last-activity semantics, reward issuance or installer/compose changes were introduced.
 - publication temporarily exposed partial fast-forward commits `4991971c3648b0bdec0f7a2a95923f1eac6bf094` and `7f7118cf91296c0f32a0edb094a87e9e118e3107` due contents/tool sequencing; the branch was repaired only by further fast-forward to coherent candidate `5f513acd1849313beee05cd739640aad4b507e7a`, with no reset, force or history rewrite. The final candidate passed Format, Vet, full Go tests, installer syntax/unit tests, Docker prerequisites and Telemt E2E/rerun in CI `34541388012`.
 
+### CP-044 implemented
+
+- added authenticated server-rendered `/users` using the existing minimal Web Panel pattern over the CP-043 authoritative read model.
+- the page renders only persisted/authoritative Telegram ID, proxy username, desired state, sync state/safe error code, current Credit Bucket bytes/nearest active expiry, referral count and created/updated timestamps.
+- the page reuses CP-043 `before_id`/`limit` validation and cursor semantics, is `Cache-Control: no-store`, provides an explicit empty state and uses `html/template` escaping for stored strings.
+- Dashboard gained only one Users link; the page remains read-only with no enable/disable, ban, credit, secret, Node, Sponsor or reset controls.
+- tests cover unauthenticated redirect, deterministic pagination, escaped tampered stored text, current credit/referral projection, empty state, Dashboard reachability, typed invalid pagination and no mutation of authoritative state.
+- no Telegram/Telemt calls, new secrets, migrations, inferred Telegram username/traffic/Node/Sponsor/last-activity fields or installer/compose changes were introduced.
+- candidate `64dece67e2e0b9e2c2a9e2653b6fee42921c4450` is one atomic four-file fast-forward and passed Format, Vet, full Go tests, installer syntax/unit tests, Docker prerequisites and Telemt E2E/rerun in CI `34541946964`.
+
 ## Supplied source hashes
 
 - AGENTS: `4a0c4156f14c3a40fbf2c6da8937f36c9f7f15f694bc3895181b13ccc0984483`
@@ -93,26 +104,25 @@ Telemt `3.5.7`, upstream commit `4ca7418442478cd92f9e861c21977a81b249efc8`.
 
 ## Active stage
 
-### Stage 11B — Web Panel read-only User inventory surface — ACTIVE
+### Stage 11C — Authenticated Start Gift settings API — ACTIVE
 
-Roadmap basis: Web Panel Users requires an operator-visible user list. CP-043 now provides the authoritative read model and authenticated API for fields actually persisted by the current repository. This milestone adds only the matching read-only server-rendered management surface and must not invent roadmap fields that are not stored yet.
+Roadmap basis: Web Panel Settings explicitly includes `start gift`. The repository already has `settings.StartGiftBytes` / `SetStartGiftBytes`, and Telegram `EnsureStartGift` reads that setting transactionally before creating the exactly-once start-gift Credit Bucket. This milestone exposes only that existing contract to authenticated Admin API clients.
 
 Scope only:
-- add authenticated server-rendered `/users` using the existing minimal Web Panel pattern and no frontend framework;
-- render only CP-043 authoritative fields: Telegram ID, proxy username, desired enabled state, sync state and safe error code, available Credit Bucket bytes, nearest active expiry, referral count, created_at and updated_at;
-- reuse the CP-043 `before_id`/`limit` pagination validation/semantics rather than introducing alternate query rules;
-- add the smallest Dashboard/navigation link needed to reach the Users surface;
-- show a clear empty state and safely escape every rendered stored string;
-- keep the page read-only: no enable/disable, ban, credit, secret, node, sponsor, reset or other mutation controls in this milestone;
-- do not call Telegram/Telemt, infer Telegram username, Node/Sponsor assignment, traffic/last activity or expose secret status.
+- add authenticated `GET` and `PUT` for the existing start-gift byte setting using the current Admin API auth + CSRF contract;
+- use a bounded JSON body, reject unknown fields/trailing JSON and keep errors typed/safe;
+- accept only a positive int64 byte value, reuse `settings.SetStartGiftBytes` as the mutation primitive and return the effective stored value;
+- default GET must return `settings.DefaultStartGiftBytes` when no override exists, matching current Telegram start behavior;
+- mutation affects only future users whose exactly-once start gift has not yet been created; do not rewrite or top up existing Credit Buckets;
+- no new migration, no reward-recipient semantics, no Telegram/Telemt call, no Bot token/content changes and no user-specific mutation endpoint.
 
 Acceptance:
-- unauthenticated `/users` redirects to `/login` and renders no user data;
-- authenticated `/users` is `no-store`, renders deterministic inventory rows and safely escaped stored strings;
-- cursor pagination follows CP-043 ordering without duplicate/skip under stable data and malformed pagination uses the same typed safe validation contract;
-- empty inventory renders an explicit empty state;
-- rendering/pagination does not mutate Telegram users, Proxy Users, referrals or Credit Buckets and performs no Telegram/Telemt call;
-- existing Sponsor/Node/referral/Forced Join/proxy/quota behavior remains unchanged;
+- unauthenticated GET/PUT follow existing Admin API behavior and PUT requires valid session-derived CSRF;
+- GET returns default or configured positive int64 bytes with `Cache-Control: no-store`;
+- PUT rejects malformed, unknown-field, trailing, oversized, zero/negative and overflow input with typed safe problems and no setting mutation;
+- a successful PUT changes the amount used by a later `EnsureStartGift`, while replay for an already-gifted user remains exactly-once and preserves the original bucket amount;
+- no existing Credit Bucket is mutated by changing the setting;
+- existing Sponsor/Node/referral/Forced Join/User/proxy/quota behavior remains unchanged;
 - format/vet/test and Docker/Telemt E2E remain green.
 
 ### Stage 9D — Proxy Node test/health/status — BLOCKED ON RUNTIME CREDENTIAL CONTRACT
@@ -136,10 +146,11 @@ Roadmap requires configurable daily/weekly caps, cooldowns, blacklist and suspic
 - Forced Join gates gift and provisioning; referral attribution is durable before the Forced Join recheck gap.
 - Referral credit recipient semantics remain unresolved; do not issue referral rewards.
 - Sponsor Profile persistence is independent of assignment routing; sticky/weighted assignment and Telemt projection remain separate later milestones.
-- CP-043 still leaves `TPROXY_TELEMT_API_URL`, current compose topology and quota reconciliation targeting one global Telemt service.
+- CP-044 still leaves `TPROXY_TELEMT_API_URL`, current compose topology and quota reconciliation targeting one global Telemt service.
 - Relay records are schema-readiness metadata only; no Iran Relay tunnel runtime exists yet.
 - Existing Web Panel remains server-rendered/minimal; do not introduce a frontend framework for isolated management surfaces.
 - The current user identity schema does not store Telegram username, Node/Sponsor assignment or general last activity; User surfaces must expose absence rather than infer those roadmap fields.
+- Start Gift configuration changes only the future exactly-once grant amount; historical Credit Buckets remain authoritative and immutable except through explicit ledger operations.
 
 ## Validation/failure log
 
@@ -160,7 +171,9 @@ Roadmap requires configurable daily/weekly caps, cooldowns, blacklist and suspic
 - CP-042 candidate `4b28df5b...` CI `34530056110` PASS on the first candidate; full Go and installer/Docker/Telemt E2E validation succeeded with no repair commit required.
 - CP-042 promotion docs commit `461dc9c9...` CI `34530542473` PASS.
 - CP-043 publication temporarily exposed partial fast-forward commits `4991971c...` and `7f7118cf...`; final coherent candidate `5f513acd...` repaired the milestone by fast-forward only. CI `34541388012` PASS across full Go and installer/Docker/Telemt E2E validation.
+- CP-043 promotion docs commit `d1587d80...` CI `34541753619` PASS.
+- CP-044 candidate `64dece67...` CI `34541946964` PASS on the first candidate; full Go and installer/Docker/Telemt E2E validation succeeded with no repair commit required.
 
 ## Current next action
 
-Verify the CP-043 promotion docs-head CI. Then implement only Stage 11B: authenticated read-only Web Panel Users surface over the CP-043 authoritative read model. Keep user mutation actions, Telegram username persistence, Node/Sponsor assignment, traffic/last-activity semantics, reward issuance, unresolved anti-abuse policy, Node runtime probing, multi-Telemt routing and installer/compose behavior unchanged.
+Verify the CP-044 promotion docs-head CI. Then implement only Stage 11C: authenticated Admin API for the already-existing Start Gift byte setting. Keep existing Credit Buckets immutable, user-specific mutations, Telegram/Bot content, reward issuance, unresolved anti-abuse policy, Node runtime probing, multi-Telemt routing and installer/compose behavior unchanged.
