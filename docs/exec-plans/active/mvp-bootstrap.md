@@ -3,7 +3,7 @@
 Status: ACTIVE
 Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
-Latest verified checkpoint: `5c9c07eab510634490b9d70fe55295f6633500bd`
+Latest verified checkpoint: `bb6d6f98e8cf8e8806e7e5210dcbbb9a2fe31228`
 
 ## Recovery contract
 
@@ -52,15 +52,17 @@ Non-negotiable architecture: SQLite WAL/NORMAL is authoritative Control Plane st
 - CP-038 Proxy Node identity/config persistence primitives: `c2599bdedaffad413892769131ed925db0bec139`, CI `34519237959` PASS.
 - CP-039 Authenticated Proxy Node Admin CRUD API: `23d43eba64af94efcf2259b3a24b67a065c8db44`, CI `34524258262` PASS.
 - CP-040 Web Panel Proxy Node metadata management surface: `5c9c07eab510634490b9d70fe55295f6633500bd`, CI `34525730547` PASS.
+- CP-041 Web Panel referral reward settings + history surface: `bb6d6f98e8cf8e8806e7e5210dcbbb9a2fe31228`, CI `34529186492` PASS.
 
-### CP-040 implemented
+### CP-041 implemented
 
-- authenticated server-rendered `/nodes` management follows the existing minimal Web Panel pattern and lists canonical Proxy/Relay Node metadata from SQLite in deterministic ID order.
-- create/edit/delete controls submit complete CP-039 static payloads only to same-origin `/api/nodes` with the existing session-derived CSRF token and surface safe returned Problem messages.
-- page output uses `html/template`, renders a clear empty state, and does not expose Node credentials because CP-038/039 persist no Node token/secret/password fields.
-- the Dashboard and Node page navigation gained only the smallest links needed to reach `/nodes`; no frontend framework or unrelated UX refactor was introduced.
-- no Node test/probe/status/health/version/heartbeat telemetry, lifecycle actions, Sponsor assignment, Relay runtime, multi-Telemt routing, compose/installer changes, Bot Node UI or Node audit mutation were added.
-- final 9C diff is one atomic four-file commit and candidate `5c9c07eab510634490b9d70fe55295f6633500bd` passed Format, Vet, full Go tests, installer syntax/unit tests, Docker prerequisites and Telemt E2E/rerun in CI `34525730547`.
+- authenticated server-rendered `/referrals` exposes only the already-verified CP-033 reward settings and CP-034 referral history contracts through the existing minimal Web Panel pattern.
+- settings updates go only to same-origin `PUT /api/referral/reward-settings` with the existing session-derived CSRF token; the page does not create Credit Buckets or choose any referral reward recipient.
+- reward byte/day values are submitted as exact positive integer JSON text instead of lossily converting potentially large int64 values through JavaScript `Number`.
+- referral history renders inviter/invitee Telegram IDs, status, rejection reason and relevant timestamps, and reuses the existing typed CP-034 pagination parser plus `before_id` cursor semantics.
+- tests prove unauthenticated redirect, no-store rendering, typed invalid pagination, deterministic bounded pagination, Dashboard reachability and no mutation of referral attribution/settings/Credit Bucket state during rendering/pagination.
+- no reward issuance, anti-abuse policy, Telegram/proxy provisioning behavior, Node runtime probing, Sponsor assignment, multi-Telemt routing or installer/compose behavior changed.
+- final 7D4 diff is one atomic four-file commit and candidate `bb6d6f98e8cf8e8806e7e5210dcbbb9a2fe31228` passed Format, Vet, full Go tests, installer syntax/unit tests, Docker prerequisites and Telemt E2E/rerun in CI `34529186492`.
 
 ## Supplied source hashes
 
@@ -78,26 +80,26 @@ Telemt `3.5.7`, upstream commit `4ca7418442478cd92f9e861c21977a81b249efc8`.
 
 ## Active stage
 
-### Stage 7D4 — Web Panel referral reward settings + history surface — ACTIVE
+### Stage 7C2C — Web Panel Forced Join management surface — ACTIVE
 
-Roadmap basis: Web Panel explicitly includes referral reward rules/history, while CP-033 already exposes authenticated reward settings and CP-034 exposes authenticated referral history. This milestone provides only the UI over those proven contracts and does not cross the unresolved reward-recipient or anti-abuse semantics.
+Roadmap basis: Web Panel Forced Join explicitly requires multiple channels, enabled/disabled state, required/optional campaign state, ordering and custom text. CP-027 already provides the authenticated typed CRUD API and CP-028 already provides the Telegram manual recheck UX. This milestone adds only the missing Web Panel configuration surface.
 
 Scope only:
-- add authenticated server-rendered `/referrals` using the existing minimal Web Panel pattern and no frontend framework;
-- render current referral reward bytes/expiry-days settings and allow updating them only through existing `PUT /api/referral/reward-settings` with session-derived CSRF;
-- render referral history from the existing CP-034 read model, including inviter/invitee Telegram IDs, status, rejection reason and relevant timestamps;
-- provide bounded history pagination using the existing `before_id` cursor contract;
-- surface safe API Problem messages without parsing human-readable strings for application state;
-- add the smallest Dashboard/navigation links needed to reach referral management;
-- do not issue any referral Credit Bucket, select a reward recipient, add daily/weekly caps/cooldowns/blacklists/suspicious scoring, mutate referral history, or change Telegram/proxy provisioning behavior.
+- add authenticated server-rendered `/forced-join` using the existing minimal Web Panel pattern and no frontend framework;
+- render all Forced Join channel records from the authoritative domain in deterministic `position,id` order, including disabled/optional records;
+- allow create/update/delete only through the existing same-origin `/api/forced-join/channels` CRUD API with session-derived CSRF;
+- expose only existing fields: chat reference, display name, Telegram join URL, enabled, required, position and custom text;
+- surface safe returned Problem messages and preserve existing CP-024/027 validation/canonicalization;
+- add the smallest Dashboard/navigation links needed to reach Forced Join management;
+- do not call Telegram membership APIs, alter `/start` gating/manual-recheck behavior, issue rewards, change provisioning, add new secrets, or introduce broad content-management/audit changes.
 
 Acceptance:
-- unauthenticated `/referrals` redirects to `/login` under existing session behavior;
-- authenticated page renders configured reward settings and deterministic referral history without exposing secrets;
-- settings updates use same-origin Control Plane API plus valid session-derived CSRF and preserve existing validation;
-- pagination follows CP-034 cursor semantics and does not mutate referral attribution rows;
-- no referral reward Credit Bucket is created by page rendering or settings updates;
-- existing Sponsor/Node/proxy/quota behavior remains unchanged;
+- unauthenticated `/forced-join` redirects to `/login` without CSRF markup;
+- authenticated page renders all channels in deterministic management order and safely escapes stored display/custom text;
+- create/edit/delete controls target only the existing typed API and include valid session-derived CSRF;
+- enabled/required toggles and position/custom text round-trip through the existing API without alternate validation rules;
+- page rendering itself does not call Telegram or mutate Forced Join/referral/Credit Bucket state;
+- existing Sponsor/Node/referral/proxy/quota behavior remains unchanged;
 - format/vet/test and Docker/Telemt E2E remain green.
 
 ### Stage 9D — Proxy Node test/health/status — BLOCKED ON RUNTIME CREDENTIAL CONTRACT
@@ -121,7 +123,7 @@ Roadmap requires configurable daily/weekly caps, cooldowns, blacklist and suspic
 - Forced Join gates gift and provisioning; referral attribution is durable before the Forced Join recheck gap.
 - Referral credit recipient semantics remain unresolved; do not issue referral rewards.
 - Sponsor Profile persistence is independent of assignment routing; sticky/weighted assignment and Telemt projection remain separate later milestones.
-- CP-040 still leaves `TPROXY_TELEMT_API_URL`, current compose topology and quota reconciliation targeting one global Telemt service.
+- CP-041 still leaves `TPROXY_TELEMT_API_URL`, current compose topology and quota reconciliation targeting one global Telemt service.
 - Relay records are schema-readiness metadata only; no Iran Relay tunnel runtime exists yet.
 - Existing Web Panel remains server-rendered/minimal; do not introduce a frontend framework for isolated management surfaces.
 
@@ -138,7 +140,9 @@ Roadmap requires configurable daily/weekly caps, cooldowns, blacklist and suspic
 - CP-039 candidate `23d43eba...` CI `34524258262` PASS on the first candidate; full Go and installer/Docker/Telemt E2E validation succeeded with no repair commit required.
 - CP-039 promotion docs commit `890e4a90...` CI `34524760453` PASS.
 - CP-040 candidate `5c9c07ea...` CI `34525730547` PASS on the first candidate; full Go and installer/Docker/Telemt E2E validation succeeded with no repair commit required.
+- CP-040 promotion docs commit `82fb13d4...` CI `34528554637` PASS.
+- CP-041 candidate `bb6d6f98...` CI `34529186492` PASS on the first candidate; full Go and installer/Docker/Telemt E2E validation succeeded with no repair commit required.
 
 ## Current next action
 
-Verify the CP-040 promotion docs-head CI. Then implement only Stage 7D4: authenticated server-rendered referral reward settings/history backed by the existing CP-033/034 APIs. Keep reward issuance/recipient selection, unresolved anti-abuse policy, Node runtime probing, Sponsor assignment, multi-Telemt routing and installer/compose behavior unchanged.
+Verify the CP-041 promotion docs-head CI. Then implement only Stage 7C2C: authenticated server-rendered Forced Join channel management backed by the existing CP-027 CRUD API. Keep Telegram membership/recheck behavior, reward issuance, unresolved anti-abuse policy, Node runtime probing, Sponsor assignment, multi-Telemt routing and installer/compose behavior unchanged.
