@@ -25,6 +25,7 @@ type sponsorProfilePayload struct {
 }
 
 func (s *Server) registerSponsorRoutes() {
+	s.mux.HandleFunc("GET /sponsors", s.handleSponsorPage)
 	s.mux.HandleFunc("GET /api/sponsors", s.handleSponsorList)
 	s.mux.HandleFunc("POST /api/sponsors", s.handleSponsorCreate)
 	s.mux.HandleFunc("PUT /api/sponsors/{id}", s.handleSponsorUpdate)
