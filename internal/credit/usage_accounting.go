@@ -11,7 +11,7 @@ import (
 )
 
 var (
-	ErrReconciliationNotActive         = errors.New("quota reconciliation is not active")
+	ErrReconciliationNotActive         = errors.New("quota reconciliation cannot account usage in current phase")
 	ErrQuotaResetMismatch              = errors.New("Telemt quota reset epoch does not match reconciliation")
 	ErrQuotaUsageRegressed             = errors.New("Telemt quota usage regressed")
 	ErrProjectionDrift                 = errors.New("credit projection drift detected")
@@ -73,7 +73,8 @@ WHERE proxy_user_id = ?`, userID).Scan(&generation, &phase, &resetEpoch, &baseli
 	if generation <= 0 || resetEpoch < 0 || baselineUsed < 0 {
 		return UsageAccounting{}, ErrProjectionDrift
 	}
-	if ReconciliationPhase(phase) != PhaseActive {
+	currentPhase := ReconciliationPhase(phase)
+	if currentPhase != PhaseActive && currentPhase != PhaseBlocked {
 		return UsageAccounting{}, ErrReconciliationNotActive
 	}
 	if uint64(resetEpoch) != observation.ResetEpochSecs {
@@ -175,7 +176,7 @@ UPDATE quota_reconciliations
 SET telemt_baseline_used_bytes = ?, updated_at = ?
 WHERE proxy_user_id = ? AND generation = ? AND phase = ?
   AND telemt_reset_epoch_secs = ? AND telemt_baseline_used_bytes = ?`,
-		int64(observation.UsedBytes), now, userID, generation, string(PhaseActive), resetEpoch, baselineUsed)
+		int64(observation.UsedBytes), now, userID, generation, string(currentPhase), resetEpoch, baselineUsed)
 	if err != nil {
 		return UsageAccounting{}, fmt.Errorf("advance Telemt usage baseline: %w", err)
 	}

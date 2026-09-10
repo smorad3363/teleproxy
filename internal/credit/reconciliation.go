@@ -11,16 +11,103 @@ import (
 )
 
 var (
-	ErrReconciliationNotFound = errors.New("quota reconciliation not found")
-	ErrReconciliationConflict = errors.New("quota reconciliation generation conflict")
+	ErrReconciliationNotFound      = errors.New("quota reconciliation not found")
+	ErrReconciliationConflict      = errors.New("quota reconciliation generation conflict")
+	ErrReconciliationPhaseConflict = errors.New("quota reconciliation phase conflict")
+	ErrReconciliationTransition    = errors.New("quota reconciliation phase transition is not allowed")
 )
 
 type ReconciliationPhase string
 
 const (
-	PhaseApplying ReconciliationPhase = "applying"
-	PhaseActive   ReconciliationPhase = "active"
+	PhaseApplying  ReconciliationPhase = "applying"
+	PhaseActive    ReconciliationPhase = "active"
+	PhaseBlocking  ReconciliationPhase = "blocking"
+	PhaseBlocked   ReconciliationPhase = "blocked"
+	PhaseResetting ReconciliationPhase = "resetting"
+	PhaseEnabling  ReconciliationPhase = "enabling"
 )
+
+func TransitionReconciliationPhase(ctx context.Context, db *sql.DB, username string, generation int64, from, to ReconciliationPhase) error {
+	if db == nil {
+		return fmt.Errorf("credit database is required")
+	}
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return ErrUserNotFound
+	}
+	if generation <= 0 {
+		return fmt.Errorf("reconciliation generation must be positive")
+	}
+	if !allowedReconciliationTransition(from, to) {
+		return ErrReconciliationTransition
+	}
+
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin reconciliation phase transition: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	userID, err := proxyUserIDQuery(ctx, tx, username)
+	if err != nil {
+		return err
+	}
+	now := time.Now().UTC().Truncate(time.Second).Unix()
+	result, err := tx.ExecContext(ctx, `
+UPDATE quota_reconciliations
+SET phase = ?, updated_at = ?
+WHERE proxy_user_id = ? AND generation = ? AND phase = ?`,
+		string(to), now, userID, generation, string(from))
+	if err != nil {
+		return fmt.Errorf("transition reconciliation phase: %w", err)
+	}
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("read reconciliation phase transition result: %w", err)
+	}
+	if changed != 1 {
+		var exists int
+		err := tx.QueryRowContext(ctx, `SELECT 1 FROM quota_reconciliations WHERE proxy_user_id = ?`, userID).Scan(&exists)
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrReconciliationNotFound
+		}
+		if err != nil {
+			return fmt.Errorf("inspect reconciliation phase conflict: %w", err)
+		}
+		return ErrReconciliationPhaseConflict
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit reconciliation phase transition: %w", err)
+	}
+	return nil
+}
+
+func allowedReconciliationTransition(from, to ReconciliationPhase) bool {
+	switch from {
+	case PhaseActive:
+		return to == PhaseBlocking
+	case PhaseBlocking:
+		return to == PhaseBlocked
+	case PhaseBlocked:
+		return to == PhaseResetting
+	case PhaseApplying:
+		return to == PhaseEnabling || to == PhaseActive
+	case PhaseEnabling:
+		return to == PhaseActive
+	default:
+		return false
+	}
+}
+
+func knownReconciliationPhase(phase ReconciliationPhase) bool {
+	switch phase {
+	case PhaseApplying, PhaseActive, PhaseBlocking, PhaseBlocked, PhaseResetting, PhaseEnabling:
+		return true
+	default:
+		return false
+	}
+}
 
 type ProjectionMemberSnapshot struct {
 	Position       int   `json:"position"`
@@ -209,13 +296,13 @@ WHERE proxy_user_id = ?`, userID)
 	} else if err != nil {
 		return ReconciliationSnapshot{}, fmt.Errorf("load quota reconciliation: %w", err)
 	}
-	if snapshot.Generation <= 0 || phase == "" || resetEpoch < 0 || baselineUsed < 0 || projectedQuota < 0 {
+	snapshot.Phase = ReconciliationPhase(phase)
+	if snapshot.Generation <= 0 || !knownReconciliationPhase(snapshot.Phase) || resetEpoch < 0 || baselineUsed < 0 || projectedQuota < 0 {
 		return ReconciliationSnapshot{}, fmt.Errorf("quota reconciliation contains invalid stored values")
 	}
 
 	snapshot.ProxyUserID = userID
 	snapshot.Username = username
-	snapshot.Phase = ReconciliationPhase(phase)
 	snapshot.TelemtResetEpochSecs = uint64(resetEpoch)
 	snapshot.TelemtBaselineUsedBytes = uint64(baselineUsed)
 	snapshot.ProjectedAt = time.Unix(projectedAt, 0).UTC()
@@ -265,7 +352,8 @@ ORDER BY position`, userID, snapshot.Generation)
 
 func nextReconciliationGeneration(ctx context.Context, tx *sql.Tx, userID, expected int64) (int64, error) {
 	var current int64
-	err := tx.QueryRowContext(ctx, "SELECT generation FROM quota_reconciliations WHERE proxy_user_id = ?", userID).Scan(&current)
+	var phase string
+	err := tx.QueryRowContext(ctx, "SELECT generation, phase FROM quota_reconciliations WHERE proxy_user_id = ?", userID).Scan(&current, &phase)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		if expected != 0 {
@@ -276,6 +364,8 @@ func nextReconciliationGeneration(ctx context.Context, tx *sql.Tx, userID, expec
 		return 0, fmt.Errorf("read quota reconciliation generation: %w", err)
 	case current != expected:
 		return 0, ErrReconciliationConflict
+	case ReconciliationPhase(phase) != PhaseApplying && ReconciliationPhase(phase) != PhaseResetting:
+		return 0, ErrReconciliationPhaseConflict
 	case current == math.MaxInt64:
 		return 0, fmt.Errorf("quota reconciliation generation exhausted")
 	default:
