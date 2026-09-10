@@ -58,12 +58,13 @@ TPROXY_INSTALL_DIR="$INSTALL_DIR" "$TPROXY_BIN" panel | grep -F "http://127.0.0.
 TPROXY_INSTALL_DIR="$INSTALL_DIR" "$TPROXY_BIN" proxy status | grep -F 'Proxy Plane: healthy' >/dev/null
 
 # The proxy listener is public/configurable, but the Telemt Control API must not be published.
-if compose port telemt 9091 2>/dev/null | grep -q .; then
-  echo "Telemt API port 9091 was published to the host" >&2
-  exit 1
-fi
 telemt_id=$(compose ps -q telemt)
 [[ -n "$telemt_id" ]]
+api_bindings=$(sudo docker inspect -f '{{with index .HostConfig.PortBindings "9091/tcp"}}{{json .}}{{end}}' "$telemt_id")
+if [[ -n "$api_bindings" && "$api_bindings" != "null" && "$api_bindings" != "[]" ]]; then
+  echo "Telemt API port 9091 was published to the host: $api_bindings" >&2
+  exit 1
+fi
 telemt_ip=$(sudo docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$telemt_id")
 [[ -n "$telemt_ip" ]]
 unauth_code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 "http://${telemt_ip}:9091/v1/health")
