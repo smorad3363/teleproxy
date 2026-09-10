@@ -3,7 +3,7 @@
 Status: ACTIVE
 Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
-Latest verified checkpoint: `bb6d6f98e8cf8e8806e7e5210dcbbb9a2fe31228`
+Latest verified checkpoint: `4b28df5b30e1686a0f43400df7425e400b5951b6`
 
 ## Recovery contract
 
@@ -53,16 +53,17 @@ Non-negotiable architecture: SQLite WAL/NORMAL is authoritative Control Plane st
 - CP-039 Authenticated Proxy Node Admin CRUD API: `23d43eba64af94efcf2259b3a24b67a065c8db44`, CI `34524258262` PASS.
 - CP-040 Web Panel Proxy Node metadata management surface: `5c9c07eab510634490b9d70fe55295f6633500bd`, CI `34525730547` PASS.
 - CP-041 Web Panel referral reward settings + history surface: `bb6d6f98e8cf8e8806e7e5210dcbbb9a2fe31228`, CI `34529186492` PASS.
+- CP-042 Web Panel Forced Join management surface: `4b28df5b30e1686a0f43400df7425e400b5951b6`, CI `34530056110` PASS.
 
-### CP-041 implemented
+### CP-042 implemented
 
-- authenticated server-rendered `/referrals` exposes only the already-verified CP-033 reward settings and CP-034 referral history contracts through the existing minimal Web Panel pattern.
-- settings updates go only to same-origin `PUT /api/referral/reward-settings` with the existing session-derived CSRF token; the page does not create Credit Buckets or choose any referral reward recipient.
-- reward byte/day values are submitted as exact positive integer JSON text instead of lossily converting potentially large int64 values through JavaScript `Number`.
-- referral history renders inviter/invitee Telegram IDs, status, rejection reason and relevant timestamps, and reuses the existing typed CP-034 pagination parser plus `before_id` cursor semantics.
-- tests prove unauthenticated redirect, no-store rendering, typed invalid pagination, deterministic bounded pagination, Dashboard reachability and no mutation of referral attribution/settings/Credit Bucket state during rendering/pagination.
-- no reward issuance, anti-abuse policy, Telegram/proxy provisioning behavior, Node runtime probing, Sponsor assignment, multi-Telemt routing or installer/compose behavior changed.
-- final 7D4 diff is one atomic four-file commit and candidate `bb6d6f98e8cf8e8806e7e5210dcbbb9a2fe31228` passed Format, Vet, full Go tests, installer syntax/unit tests, Docker prerequisites and Telemt E2E/rerun in CI `34529186492`.
+- authenticated server-rendered `/forced-join` lists every authoritative Forced Join channel in existing deterministic `position,id` order, including disabled and optional records.
+- create/edit/delete controls send only the existing CP-027 fields to same-origin `/api/forced-join/channels` with session-derived CSRF; existing validation/canonicalization remains the only mutation contract.
+- the page exposes chat reference, display name, Telegram join URL, enabled/required toggles, position and custom text, with `html/template` escaping and a clear empty state.
+- Dashboard/navigation gained only the smallest links needed to reach Forced Join management; no frontend framework or unrelated UI refactor was introduced.
+- tests cover unauthenticated redirect, no-store HTML, deterministic ordering, escaped stored text, exact API/CSRF wiring, empty state/Dashboard reachability and no mutation of Forced Join/referral/Credit Bucket state during rendering.
+- no Telegram membership API call, `/start` or manual-recheck behavior change, reward issuance, provisioning change, new secret, Node runtime probe, Sponsor assignment, multi-Telemt routing or installer/compose change was added.
+- final 7C2C diff is one atomic four-file commit and candidate `4b28df5b30e1686a0f43400df7425e400b5951b6` passed Format, Vet, full Go tests, installer syntax/unit tests, Docker prerequisites and Telemt E2E/rerun in CI `34530056110`.
 
 ## Supplied source hashes
 
@@ -80,26 +81,26 @@ Telemt `3.5.7`, upstream commit `4ca7418442478cd92f9e861c21977a81b249efc8`.
 
 ## Active stage
 
-### Stage 7C2C — Web Panel Forced Join management surface — ACTIVE
+### Stage 11A — Authenticated read-only User inventory API — ACTIVE
 
-Roadmap basis: Web Panel Forced Join explicitly requires multiple channels, enabled/disabled state, required/optional campaign state, ordering and custom text. CP-027 already provides the authenticated typed CRUD API and CP-028 already provides the Telegram manual recheck UX. This milestone adds only the missing Web Panel configuration surface.
+Roadmap basis: Web Panel Users requires Telegram identity, status, credits, expiry, referrals and created/activity data. Current repository state already has authoritative Telegram ID ↔ Proxy User identity, Proxy User desired/sync state, Credit Buckets, referral attribution and timestamps. It does not yet persist Telegram username, Node/Sponsor assignment or a general user last-activity field, so those must not be fabricated in this milestone.
 
 Scope only:
-- add authenticated server-rendered `/forced-join` using the existing minimal Web Panel pattern and no frontend framework;
-- render all Forced Join channel records from the authoritative domain in deterministic `position,id` order, including disabled/optional records;
-- allow create/update/delete only through the existing same-origin `/api/forced-join/channels` CRUD API with session-derived CSRF;
-- expose only existing fields: chat reference, display name, Telegram join URL, enabled, required, position and custom text;
-- surface safe returned Problem messages and preserve existing CP-024/027 validation/canonicalization;
-- add the smallest Dashboard/navigation links needed to reach Forced Join management;
-- do not call Telegram membership APIs, alter `/start` gating/manual-recheck behavior, issue rewards, change provisioning, add new secrets, or introduce broad content-management/audit changes.
+- add a read-only user-admin domain/read model over existing tables; no migration;
+- expose authenticated `GET /api/users` using the existing Admin API auth contract, `Cache-Control: no-store` and bounded deterministic cursor pagination;
+- return only authoritative existing fields: Telegram user ID, Telegram ID, Proxy User ID/username, desired enabled state, sync state and safe last error code, currently available Credit Bucket bytes, nearest active credit expiry if any, referral count, created_at and updated_at;
+- compute credit availability/expiry from Credit Buckets as source of truth at one request timestamp; do not read Telemt quota as authoritative state;
+- referral count is the count of durable attributions where the user is inviter, independent of unresolved reward recipient semantics;
+- invalid pagination returns a typed/safe problem without mutation;
+- do not expose Telemt/MTProto secrets, call Telemt/Telegram, add user mutations, infer Telegram username, Node/Sponsor assignment, traffic/last-activity semantics, or issue/revoke Credit Buckets.
 
 Acceptance:
-- unauthenticated `/forced-join` redirects to `/login` without CSRF markup;
-- authenticated page renders all channels in deterministic management order and safely escapes stored display/custom text;
-- create/edit/delete controls target only the existing typed API and include valid session-derived CSRF;
-- enabled/required toggles and position/custom text round-trip through the existing API without alternate validation rules;
-- page rendering itself does not call Telegram or mutate Forced Join/referral/Credit Bucket state;
-- existing Sponsor/Node/referral/proxy/quota behavior remains unchanged;
+- authenticated list is deterministic and paginates without duplicates/skips under stable data;
+- balances and nearest expiry reflect authoritative active Credit Buckets and do not use Telemt as source of truth;
+- referral count reflects durable inviter attributions regardless of pending/rewarded/rejected state;
+- unauthenticated calls fail under existing Admin API behavior and malformed pagination returns typed safe errors;
+- listing is read-only and does not mutate Telegram users, Proxy Users, referrals, Credit Buckets or Telemt state;
+- existing Sponsor/Node/referral/Forced Join/proxy/quota behavior remains unchanged;
 - format/vet/test and Docker/Telemt E2E remain green.
 
 ### Stage 9D — Proxy Node test/health/status — BLOCKED ON RUNTIME CREDENTIAL CONTRACT
@@ -123,9 +124,10 @@ Roadmap requires configurable daily/weekly caps, cooldowns, blacklist and suspic
 - Forced Join gates gift and provisioning; referral attribution is durable before the Forced Join recheck gap.
 - Referral credit recipient semantics remain unresolved; do not issue referral rewards.
 - Sponsor Profile persistence is independent of assignment routing; sticky/weighted assignment and Telemt projection remain separate later milestones.
-- CP-041 still leaves `TPROXY_TELEMT_API_URL`, current compose topology and quota reconciliation targeting one global Telemt service.
+- CP-042 still leaves `TPROXY_TELEMT_API_URL`, current compose topology and quota reconciliation targeting one global Telemt service.
 - Relay records are schema-readiness metadata only; no Iran Relay tunnel runtime exists yet.
 - Existing Web Panel remains server-rendered/minimal; do not introduce a frontend framework for isolated management surfaces.
+- The current user identity schema does not store Telegram username, Node/Sponsor assignment or general last activity; Stage 11A must expose absence rather than infer those roadmap fields.
 
 ## Validation/failure log
 
@@ -142,7 +144,9 @@ Roadmap requires configurable daily/weekly caps, cooldowns, blacklist and suspic
 - CP-040 candidate `5c9c07ea...` CI `34525730547` PASS on the first candidate; full Go and installer/Docker/Telemt E2E validation succeeded with no repair commit required.
 - CP-040 promotion docs commit `82fb13d4...` CI `34528554637` PASS.
 - CP-041 candidate `bb6d6f98...` CI `34529186492` PASS on the first candidate; full Go and installer/Docker/Telemt E2E validation succeeded with no repair commit required.
+- CP-041 promotion docs commit `d78e526e...` CI `34529587053` PASS.
+- CP-042 candidate `4b28df5b...` CI `34530056110` PASS on the first candidate; full Go and installer/Docker/Telemt E2E validation succeeded with no repair commit required.
 
 ## Current next action
 
-Verify the CP-041 promotion docs-head CI. Then implement only Stage 7C2C: authenticated server-rendered Forced Join channel management backed by the existing CP-027 CRUD API. Keep Telegram membership/recheck behavior, reward issuance, unresolved anti-abuse policy, Node runtime probing, Sponsor assignment, multi-Telemt routing and installer/compose behavior unchanged.
+Verify the CP-042 promotion docs-head CI. Then implement only Stage 11A: authenticated read-only user inventory from existing authoritative SQLite state. Keep user mutation actions, Telegram username persistence, Node/Sponsor assignment, traffic/last-activity semantics, reward issuance, unresolved anti-abuse policy, Node runtime probing, multi-Telemt routing and installer/compose behavior unchanged.
