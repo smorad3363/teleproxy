@@ -3,7 +3,7 @@
 Status: ACTIVE
 Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
-Latest verified checkpoint: `457f52783f9b2962c55be00beb801f0f2534958c`
+Latest verified checkpoint: `47a95349922ba5be37cf0ed8416b482de08580ef`
 
 ## Purpose
 
@@ -17,9 +17,9 @@ Build the first recoverable foundation of Teleproxy from an empty repository, fo
 - Installation is Docker-first and safe to rerun.
 - First installation selects a random available high port for the Web Panel, persists it, and does not silently change it on rerun.
 - Installer final output shows Panel URL, Panel port, admin username, generated initial credential when needed, component health, version/ref, data/config paths, and `tproxy` command.
-- Telemt management API must not be published publicly; keep it on an internal network and authenticate requests.
+- Telemt management API must not be published publicly; keep it on a private project network and authenticate requests.
 - Never mount `/var/run/docker.sock` into the Web App.
-- No plaintext passwords, bot tokens, session secrets, MTProto secrets, API bearer values, or private keys in logs.
+- No plaintext passwords, bot tokens, session secrets, MTProto secrets, API bearer values, or private keys in logs/state.
 - Substantial work must be recoverable from this file plus Git state without relying on chat history.
 
 ## Recovery protocol
@@ -51,7 +51,7 @@ Remaining:
 - commit the supplied canonical `AGENTS.md` at repository root
 - mirror supplied `ROADMAP_FA.md` and `ROADMAP_EN.md` at repository root
 
-The supplied uploaded files remain authoritative until those large source files are mirrored into the branch.
+The supplied conversation files are currently materialized locally and remain authoritative until mirrored exactly into the branch.
 
 ### Stage 2 — Minimal Control Plane — COMPLETE
 
@@ -68,7 +68,7 @@ Implemented SQLite WAL/foreign keys/busy timeout/NORMAL sync, migrations, owner 
 ### Stage 4 — Minimal Web login — COMPLETE
 
 Verified commit: `2e83b4770dd8e26fc5c0ebcca8dee6aa51111254`
-CI run: `34420655852` PASS (format, vet, test).
+CI run: `34420655852` PASS.
 
 Implemented DB startup/migration, protected one-time owner bootstrap, DB-backed expiring sessions, login/dashboard, `HttpOnly`/`SameSite=Strict` cookie handling, CSRF, generic credential failures, direct-peer login rate limiting and database readiness.
 
@@ -77,45 +77,47 @@ Implemented DB startup/migration, protected one-time owner bootstrap, DB-backed 
 Verified commit: `457f52783f9b2962c55be00beb801f0f2534958c`
 Verified CI run: `34427021157` PASS.
 
+Implemented multi-stage non-root Control Plane image, hardened Compose service, exclusive installer lock/state, random persistent Panel port, one-time admin password, safe rerun, final install summary, `tproxy` management and real Docker E2E.
+
+### Stage 6A — Pinned Telemt data plane — COMPLETE
+
+Verified commit: `47a95349922ba5be37cf0ed8416b482de08580ef`
+Verified CI run: `34438212903` PASS.
+
 Implemented:
-- multi-stage non-root Control Plane Docker image
-- Compose service with no Docker socket, `no-new-privileges`, dropped capabilities and read-only root filesystem
-- exclusive installer lock and persistent install state
-- random high Panel port selection and persistence
-- explicit conflict refusal for an already-persisted port
-- first-install bootstrap password generated from `/dev/urandom`
-- bootstrap secret owner-only (`0600`) for container UID 10001 and removed after successful first install
-- final install summary with Panel URL/port, admin credential on first success, Control/Proxy status, source ref and paths
-- `tproxy` status/logs/restart/start/stop/doctor/config/panel commands
-- installer library tests plus real Docker install/rerun E2E
+- Telemt `3.5.7` pinned to exact release artifacts
+- SHA-256 verification before extracting the Telemt binary
+- amd64 musl digest `db26e363bb98f11a02a7fd6d0df455f4987af5cdb2a5897da7f6fb8d613fbf41`
+- arm64 musl digest `8730080863f8f8ed52ee11f9c51c4daa30b3044fc842538bf6dd8c91ac0572c1`
+- non-root distroless Telemt runtime with liveness healthcheck
+- Telemt service on the project bridge; MTProto listener published, Control API `9091` not host-published
+- cryptographically random persistent Telemt API Bearer token, stored outside install state/log output
+- generated Telemt config with strict file permissions
+- disabled internal bootstrap proxy user solely to satisfy Telemt's non-empty-users startup invariant
+- persistent Proxy port/config/data state and conflict checks
+- `tproxy proxy status|restart|logs` and Telemt health in `tproxy doctor`
+- installer waits for both Control readiness and Telemt health before success output
+- E2E checks API host isolation, unauthorized rejection, authorized health, token non-leakage, proxy health and rerun port persistence
 
-Acceptance verified by CI:
-- Go format/vet/test PASS
-- installer shell syntax PASS
-- installer unit tests PASS
-- Docker/Compose available in E2E runner
-- first install reaches `/readyz`
-- generated password is displayed once and secret file is removed afterward
-- second install preserves the exact same Panel port
-- second install does not reprint initial plaintext password
-- manager resolves the installed panel
+Architecture note: the project bridge is intentionally not Docker `internal:true` because Telemt itself needs outbound connectivity to Telegram. API isolation is enforced by no host port publication plus Bearer authentication.
 
-### Stage 6 — Telemt integration — PENDING
+### Stage 6B — Control Plane Telemt client adapter — NEXT
 
 Scope:
-- re-verify and pin upstream Telemt release/version/checksum
-- add internal-only Telemt service/API network boundary
-- generate Telemt API authorization secret without logging it
-- authenticated Telemt client adapter and health probe
-- initial proxy-node configuration suitable for later user lifecycle integration
-- do not expose Telemt Control API as a host port
+- add focused `internal/telemt` Go client
+- load API URL and Bearer token from config/file without logging the token
+- bounded HTTP client timeouts
+- typed health result and dependency errors
+- tests for healthy, unauthorized, malformed response, unavailable and timeout behavior
+- wire adapter into Control Plane without making `/readyz` depend on Telemt
+- expose proxy dependency state only through authenticated/admin-safe status surface
 
 Acceptance:
-- pinned Telemt artifact is checksum-verified before use
-- Telemt API is reachable from Control Plane network but not published on host
-- API auth is required
-- adapter health test handles healthy, unauthorized and unavailable states
-- existing installer E2E and Go CI remain green
+- token is never emitted in logs/errors/client-visible responses
+- `GET /v1/health` is called with required Authorization header
+- timeout/unavailable Telemt does not stop Control Plane startup/readiness
+- tests cover healthy/auth/unavailable/timeout paths
+- Go format/vet/test and existing installer E2E remain green
 
 ## Checkpoints
 
@@ -140,18 +142,23 @@ Acceptance:
 ### CP-005 — Docker installer and rerun verified
 - Commit: `457f52783f9b2962c55be00beb801f0f2534958c`
 - CI: `34427021157` PASS
-- Recovery point: if interrupted after this checkpoint, inspect every commit/file after CP-005. Finish the repository-source mirror checkpoint if active; otherwise resume Stage 6. Do not reopen Stage 5 unless evidence shows a regression.
+
+### CP-006 — pinned Telemt data plane verified
+- Commit: `47a95349922ba5be37cf0ed8416b482de08580ef`
+- CI: `34438212903` PASS
+- Recovery point: if interrupted, inspect every commit/file after CP-006. Finish the repository-source mirror checkpoint if it is the active diff; otherwise repair/continue Stage 6B before starting user lifecycle work.
 
 ## Decisions / discoveries
 
 - Repository was empty at task start.
-- Telemt remains an external dependency integrated via authenticated Control API.
-- Pin Telemt versions/checksums; do not follow unbounded `latest`.
-- Do not expose Telemt management API as a public host port.
-- No Telemt source is copied into Teleproxy; preserve upstream license/branding requirements where applicable.
+- Telemt remains an external dependency integrated via authenticated Control API; no Telemt source is copied into Teleproxy.
+- Pin Telemt versions/checksums; never follow unbounded `latest` in production installation.
+- Telemt 3.5.7 rejects an empty `[access.users]`; use a generated disabled internal bootstrap user until real user lifecycle exists.
+- Telemt Control API must not be published as a host port.
+- Project bridge cannot be Docker-internal because Telemt requires outbound Telegram connectivity.
 - SQLite remains single-connection in the MVP so connection-scoped PRAGMAs cannot silently disappear.
 - Initial admin password is passed through a protected bootstrap file, never a plaintext command-line argument or normal log field.
-- The random panel port is convenience/obscurity only, not a security boundary; Stage 5 remains HTTP-only and later hardening must add TLS before treating public exposure as production-ready.
+- Random Panel port is not a security boundary; TLS hardening is still required before treating public Panel exposure as production-ready.
 
 ## Validation / failure log
 
@@ -159,10 +166,13 @@ Acceptance:
 - 2026-09-10: Stage 2 local format/test/vet PASS; CI `34419759826` PASS.
 - 2026-09-10: Stage 3 CI `34420104043` PASS.
 - 2026-09-10: Stage 4 CI `34420655852` PASS; promoted to CP-004.
-- 2026-09-10: Stage 5 candidate `c1cde407...`; CI `34426475546` failed E2E because bootstrap secret was group-readable (`0640`) and backend correctly rejected it. Fixed by keeping backend validation and changing the secret to UID 10001 ownership + `0600`.
-- 2026-09-10: Stage 5 fix `34b455b0...`; CI `34426870772` reached post-install manager assertion but failed because the E2E harness omitted its temporary `TPROXY_INSTALL_DIR`. Production behavior was not changed; harness corrected.
-- 2026-09-10: Stage 5 final candidate `457f5278...`; CI `34427021157` PASS including Go, shell/unit checks and real Docker first-install + rerun E2E. Promoted to CP-005.
+- 2026-09-10: Stage 5 candidate `c1cde407...`; CI `34426475546` failed because bootstrap secret was `0640`; backend correctly rejected it. Kept backend validation and changed secret to UID 10001 + `0600`.
+- 2026-09-10: Stage 5 fix `34b455b0...`; CI `34426870772` failed because the E2E harness omitted temporary `TPROXY_INSTALL_DIR`; production unchanged.
+- 2026-09-10: Stage 5 final `457f5278...`; CI `34427021157` PASS; promoted to CP-005.
+- 2026-09-10: Stage 6A candidate `39349dcf...`; CI `34437891406` reached healthy Telemt but the E2E used `docker compose port telemt 9091` as an unreliable no-binding assertion. Production Compose already had no `9091` mapping; changed test to inspect Docker `HostConfig.PortBindings` directly.
+- 2026-09-10: Stage 6A test fix `91722c95...`; CI `34438040249` passed installation/isolation up to reading the protected token, then failed because shell input redirection happened before `sudo`. Production token permissions remained `0600`; test changed to read via `sudo cat`.
+- 2026-09-10: Stage 6A final `47a95349...`; CI `34438212903` PASS including Go, shell/unit checks, real Docker Telemt build/install, API isolation/authentication, secret non-leakage, proxy health and rerun. Promoted to CP-006.
 
 ## Current next action
 
-First close the remaining Stage 1 recovery-source gap by committing the exact supplied `AGENTS.md`, `ROADMAP_FA.md`, and `ROADMAP_EN.md` into the repository as one documentation-only checkpoint. Then begin Stage 6 Telemt integration from CP-005 plus that documentation checkpoint.
+Mirror the exact supplied `AGENTS.md`, `ROADMAP_FA.md`, and `ROADMAP_EN.md` into repository root as a documentation-only checkpoint now that the source files are materialized locally. Then implement Stage 6B from CP-006 without coupling Control Plane readiness to Telemt availability.
