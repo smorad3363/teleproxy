@@ -41,8 +41,8 @@ func TestOpenAppliesSQLiteInvariantsAndMigrations(t *testing.T) {
 	if err := db.QueryRow("SELECT COUNT(*) FROM schema_migrations").Scan(&migrations); err != nil {
 		t.Fatalf("count migrations: %v", err)
 	}
-	if migrations != 6 {
-		t.Fatalf("migration count = %d, want 6", migrations)
+	if migrations != 7 {
+		t.Fatalf("migration count = %d, want 7", migrations)
 	}
 
 	if err := Migrate(ctx, db); err != nil {
@@ -51,8 +51,8 @@ func TestOpenAppliesSQLiteInvariantsAndMigrations(t *testing.T) {
 	if err := db.QueryRow("SELECT COUNT(*) FROM schema_migrations").Scan(&migrations); err != nil {
 		t.Fatalf("count migrations after rerun: %v", err)
 	}
-	if migrations != 6 {
-		t.Fatalf("migration count after rerun = %d, want 6", migrations)
+	if migrations != 7 {
+		t.Fatalf("migration count after rerun = %d, want 7", migrations)
 	}
 }
 
@@ -122,8 +122,8 @@ INSERT INTO credit_buckets(
 	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM schema_migrations").Scan(&migrationCount); err != nil {
 		t.Fatal(err)
 	}
-	if migrationCount != 6 {
-		t.Fatalf("migration count = %d, want 6", migrationCount)
+	if migrationCount != 7 {
+		t.Fatalf("migration count = %d, want 7", migrationCount)
 	}
 	var username string
 	if err := db.QueryRowContext(ctx, "SELECT username FROM proxy_users WHERE id = ?", proxyUserID).Scan(&username); err != nil || username != "legacy" {
@@ -145,6 +145,19 @@ VALUES (12345, ?, 200, 200)`, proxyUserID); err != nil {
 	if _, err := db.ExecContext(ctx, `
 INSERT INTO settings(key, value, updated_at) VALUES ('start_gift_bytes', '100000000', 200)`); err != nil {
 		t.Fatalf("new settings table is unusable: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `
+INSERT INTO proxy_user_provisioning(
+    proxy_user_id, phase, secret_sha256, last_error_code, created_at, updated_at
+) VALUES (?, 'prepared', zeroblob(32), NULL, 200, 200)`, proxyUserID); err != nil {
+		t.Fatalf("new proxy_user_provisioning table is unusable: %v", err)
+	}
+	var digestLength int
+	if err := db.QueryRowContext(ctx, `SELECT length(secret_sha256) FROM proxy_user_provisioning WHERE proxy_user_id = ?`, proxyUserID).Scan(&digestLength); err != nil {
+		t.Fatal(err)
+	}
+	if digestLength != 32 {
+		t.Fatalf("provisioning digest length = %d, want 32", digestLength)
 	}
 }
 
