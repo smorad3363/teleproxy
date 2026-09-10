@@ -5,12 +5,14 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
 	"github.com/smorad3363/teleproxy/internal/credit"
 	"github.com/smorad3363/teleproxy/internal/forcedjoin"
 	"github.com/smorad3363/teleproxy/internal/proxyprovision"
+	"github.com/smorad3363/teleproxy/internal/referral"
 	"github.com/smorad3363/teleproxy/internal/telegramuser"
 )
 
@@ -30,6 +32,9 @@ type StartResponse struct {
 	Payload          string                 `json:"payload,omitempty"`
 	ProxyLink        string                 `json:"proxy_link,omitempty"`
 	ProxySyncState   string                 `json:"proxy_sync_state,omitempty"`
+	ReferralCode     string                 `json:"referral_code,omitempty"`
+	ReferralLink     string                 `json:"referral_link,omitempty"`
+	ReferralCount    int64                  `json:"referral_count"`
 	MissingChannels  []StartRequiredChannel `json:"missing_channels,omitempty"`
 }
 
@@ -111,6 +116,11 @@ func (a *StartApplication) handleGatedStart(ctx context.Context, update Update, 
 	if err != nil {
 		return StartResponse{}, true, err
 	}
+	if command.Payload != "" {
+		if _, err := referral.AttributeNewInvitee(ctx, a.db, resolved, command.Payload, now); err != nil {
+			return StartResponse{}, true, fmt.Errorf("resolve Telegram referral attribution: %w", err)
+		}
+	}
 	return a.finishGatedIdentity(ctx, update.Message.Chat.ID, command.Payload, resolved.User, resolved.Created, now)
 }
 
@@ -153,7 +163,14 @@ func (a *StartApplication) finishGatedIdentity(ctx context.Context, chatID int64
 	if err != nil {
 		return StartResponse{}, true, err
 	}
-	return a.finishStart(ctx, chatID, payload, gift.User, created, gift.InitialGiftBytes, now)
+	response, handled, err := a.finishStart(ctx, chatID, payload, gift.User, created, gift.InitialGiftBytes, now)
+	if err != nil || !handled {
+		return response, handled, err
+	}
+	if err := a.attachReferralSummary(ctx, &response, gift.User.ID, now); err != nil {
+		return StartResponse{}, true, err
+	}
+	return response, true, nil
 }
 
 func (a *StartApplication) finishStart(ctx context.Context, chatID int64, payload string, user telegramuser.User, created bool, initialGiftBytes int64, now time.Time) (StartResponse, bool, error) {
@@ -180,6 +197,26 @@ func (a *StartApplication) finishStart(ctx context.Context, chatID int64, payloa
 	response.ProxyLink = provisioned.Link
 	response.ProxySyncState = string(provisioned.SyncState)
 	return response, true, nil
+}
+
+func (a *StartApplication) attachReferralSummary(ctx context.Context, response *StartResponse, telegramUserID int64, now time.Time) error {
+	code, err := referral.EnsureCode(ctx, a.db, telegramUserID, now)
+	if err != nil {
+		return fmt.Errorf("ensure Telegram referral code: %w", err)
+	}
+	count, err := referral.RewardedCount(ctx, a.db, telegramUserID)
+	if err != nil {
+		return fmt.Errorf("read Telegram referral count: %w", err)
+	}
+	response.ReferralCode = code.Value
+	response.ReferralCount = count
+	if a.botUsername != "" {
+		query := url.Values{}
+		query.Set("start", code.Value)
+		link := url.URL{Scheme: "https", Host: "t.me", Path: "/" + a.botUsername, RawQuery: query.Encode()}
+		response.ReferralLink = link.String()
+	}
+	return nil
 }
 
 func startRequiredChannels(channels []forcedjoin.Channel) []StartRequiredChannel {
