@@ -3,7 +3,7 @@
 Status: ACTIVE
 Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
-Latest verified checkpoint: `23d43eba64af94efcf2259b3a24b67a065c8db44`
+Latest verified checkpoint: `5c9c07eab510634490b9d70fe55295f6633500bd`
 
 ## Recovery contract
 
@@ -51,16 +51,16 @@ Non-negotiable architecture: SQLite WAL/NORMAL is authoritative Control Plane st
 - CP-037 Web Panel Sponsor management surface: `b16c08a5adcfdcf9a3ddaba9b6d9e5d85ab862c0`, CI `34518089493` PASS.
 - CP-038 Proxy Node identity/config persistence primitives: `c2599bdedaffad413892769131ed925db0bec139`, CI `34519237959` PASS.
 - CP-039 Authenticated Proxy Node Admin CRUD API: `23d43eba64af94efcf2259b3a24b67a065c8db44`, CI `34524258262` PASS.
+- CP-040 Web Panel Proxy Node metadata management surface: `5c9c07eab510634490b9d70fe55295f6633500bd`, CI `34525730547` PASS.
 
-### CP-039 implemented
+### CP-040 implemented
 
-- Node domain now supports full static-metadata update/delete while reusing CP-038 validation, canonicalization and case-insensitive stable-name conflict handling.
-- authenticated `GET/POST /api/nodes` and `PUT/DELETE /api/nodes/{id}` expose only authoritative static Node metadata.
-- list responses are `no-store`; mutations use the existing Admin session-derived CSRF contract; request JSON is bounded to 8 KiB and rejects unknown fields.
-- invalid input, duplicate names, unknown IDs, malformed JSON and oversized bodies return safe typed Problems without unintended mutation.
-- API tests cover authentication/CSRF, canonical CRUD round-trips, deterministic list ordering, failure non-mutation, and explicitly verify that CRUD never contacts a configured Node internal API endpoint.
-- no Node probes, telemetry, lifecycle/runtime actions, Sponsor assignment, Relay tunnel runtime, multi-Telemt routing, compose/installer changes, Web/Bot Node UI or Node audit mutation were added.
-- final 9B diff is one atomic five-file commit and candidate `23d43eba64af94efcf2259b3a24b67a065c8db44` passed Format, Vet, full Go tests, installer syntax/unit tests, Docker prerequisites and Telemt E2E/rerun in CI `34524258262`.
+- authenticated server-rendered `/nodes` management follows the existing minimal Web Panel pattern and lists canonical Proxy/Relay Node metadata from SQLite in deterministic ID order.
+- create/edit/delete controls submit complete CP-039 static payloads only to same-origin `/api/nodes` with the existing session-derived CSRF token and surface safe returned Problem messages.
+- page output uses `html/template`, renders a clear empty state, and does not expose Node credentials because CP-038/039 persist no Node token/secret/password fields.
+- the Dashboard and Node page navigation gained only the smallest links needed to reach `/nodes`; no frontend framework or unrelated UX refactor was introduced.
+- no Node test/probe/status/health/version/heartbeat telemetry, lifecycle actions, Sponsor assignment, Relay runtime, multi-Telemt routing, compose/installer changes, Bot Node UI or Node audit mutation were added.
+- final 9C diff is one atomic four-file commit and candidate `5c9c07eab510634490b9d70fe55295f6633500bd` passed Format, Vet, full Go tests, installer syntax/unit tests, Docker prerequisites and Telemt E2E/rerun in CI `34525730547`.
 
 ## Supplied source hashes
 
@@ -78,25 +78,31 @@ Telemt `3.5.7`, upstream commit `4ca7418442478cd92f9e861c21977a81b249efc8`.
 
 ## Active stage
 
-### Stage 9C — Web Panel Proxy Node metadata management surface — ACTIVE
+### Stage 7D4 — Web Panel referral reward settings + history surface — ACTIVE
 
-Roadmap basis: Web Panel explicitly includes Proxy Nodes and CP-039 now exposes authoritative static Node metadata through the existing Admin API. Current runtime still targets one global Telemt service, so this milestone adds only a management surface for already-defined static metadata and does not invent Node runtime controls.
+Roadmap basis: Web Panel explicitly includes referral reward rules/history, while CP-033 already exposes authenticated reward settings and CP-034 exposes authenticated referral history. This milestone provides only the UI over those proven contracts and does not cross the unresolved reward-recipient or anti-abuse semantics.
 
 Scope only:
-- add authenticated server-rendered `/nodes` management using the existing minimal Web Panel pattern and no frontend framework;
-- list existing canonical Proxy/Relay Node records and provide create/edit/delete controls only for CP-038 static fields;
-- use the CP-039 `/api/nodes` endpoints with same-origin credentials and the existing session-derived CSRF token for mutations;
-- safely display returned Problem messages and require explicit delete confirmation;
-- add the smallest Dashboard/navigation link needed to reach Node management;
-- no Node Test/status/health/version/heartbeat telemetry, Restart/Update/Enable/Disable/Drain runtime actions, maintenance orchestration, Sponsor assignment, FakeTLS/mode/session-limit controls, Relay tunnel runtime, multi-Telemt routing, compose/installer changes, Bot Node UI or Node audit mutation in 9C.
+- add authenticated server-rendered `/referrals` using the existing minimal Web Panel pattern and no frontend framework;
+- render current referral reward bytes/expiry-days settings and allow updating them only through existing `PUT /api/referral/reward-settings` with session-derived CSRF;
+- render referral history from the existing CP-034 read model, including inviter/invitee Telegram IDs, status, rejection reason and relevant timestamps;
+- provide bounded history pagination using the existing `before_id` cursor contract;
+- surface safe API Problem messages without parsing human-readable strings for application state;
+- add the smallest Dashboard/navigation links needed to reach referral management;
+- do not issue any referral Credit Bucket, select a reward recipient, add daily/weekly caps/cooldowns/blacklists/suspicious scoring, mutate referral history, or change Telegram/proxy provisioning behavior.
 
 Acceptance:
-- unauthenticated Web access redirects to `/login` under existing session behavior;
-- authenticated page renders deterministic canonical Node data and a clear empty state without exposing secrets;
-- create/edit/delete controls send the complete CP-039 static payload with CSRF and surface safe API errors;
-- page rendering and JavaScript do not contact configured Node internal API endpoints; only same-origin Control Plane `/api/nodes` is used for mutations;
-- existing Sponsor/referral/proxy/quota runtime behavior remains unchanged;
+- unauthenticated `/referrals` redirects to `/login` under existing session behavior;
+- authenticated page renders configured reward settings and deterministic referral history without exposing secrets;
+- settings updates use same-origin Control Plane API plus valid session-derived CSRF and preserve existing validation;
+- pagination follows CP-034 cursor semantics and does not mutate referral attribution rows;
+- no referral reward Credit Bucket is created by page rendering or settings updates;
+- existing Sponsor/Node/proxy/quota behavior remains unchanged;
 - format/vet/test and Docker/Telemt E2E remain green.
+
+### Stage 9D — Proxy Node test/health/status — BLOCKED ON RUNTIME CREDENTIAL CONTRACT
+
+The roadmap requires Node test/status/health, but CP-038/039 intentionally persist no Node token/secret/password and current Telemt authentication comes from a protected runtime token file for the single global Telemt target. Repository/product evidence does not yet define the per-Node credential source or whether `internal_api_endpoint` is specifically a Telemt API base URL. Do not probe Nodes or invent credential storage/transport semantics until that contract is explicit.
 
 ### Stage 7D2C — Exactly-once referral reward issuance — BLOCKED ON PRODUCT SEMANTICS
 
@@ -115,7 +121,7 @@ Roadmap requires configurable daily/weekly caps, cooldowns, blacklist and suspic
 - Forced Join gates gift and provisioning; referral attribution is durable before the Forced Join recheck gap.
 - Referral credit recipient semantics remain unresolved; do not issue referral rewards.
 - Sponsor Profile persistence is independent of assignment routing; sticky/weighted assignment and Telemt projection remain separate later milestones.
-- CP-039 exposes Node static metadata only. `TPROXY_TELEMT_API_URL`, current compose topology and quota reconciliation still target one global Telemt service.
+- CP-040 still leaves `TPROXY_TELEMT_API_URL`, current compose topology and quota reconciliation targeting one global Telemt service.
 - Relay records are schema-readiness metadata only; no Iran Relay tunnel runtime exists yet.
 - Existing Web Panel remains server-rendered/minimal; do not introduce a frontend framework for isolated management surfaces.
 
@@ -130,7 +136,9 @@ Roadmap requires configurable daily/weekly caps, cooldowns, blacklist and suspic
 - CP-038 candidate `c2599bde...` CI `34519237959` PASS on the first candidate. One initial unattached `create_commit` call was tool-blocked before any branch move; the same atomic tree was then committed normally and fast-forwarded. No repository state was lost or rewritten.
 - CP-038 promotion commit `b930b1f3...` contained a documentation-only typo in the historical CP-010 SHA; it was immediately repaired in the next fast-forward docs commit before any 9B code publication.
 - CP-039 candidate `23d43eba...` CI `34524258262` PASS on the first candidate; full Go and installer/Docker/Telemt E2E validation succeeded with no repair commit required.
+- CP-039 promotion docs commit `890e4a90...` CI `34524760453` PASS.
+- CP-040 candidate `5c9c07ea...` CI `34525730547` PASS on the first candidate; full Go and installer/Docker/Telemt E2E validation succeeded with no repair commit required.
 
 ## Current next action
 
-Verify the CP-039 promotion docs-head CI. Then implement only Stage 9C: authenticated server-rendered Node static-metadata management backed by the CP-039 API. Keep Node probes/telemetry/runtime actions, Sponsor assignment, Relay runtime, multi-Telemt routing, installer/compose changes and blocked referral reward semantics unchanged.
+Verify the CP-040 promotion docs-head CI. Then implement only Stage 7D4: authenticated server-rendered referral reward settings/history backed by the existing CP-033/034 APIs. Keep reward issuance/recipient selection, unresolved anti-abuse policy, Node runtime probing, Sponsor assignment, multi-Telemt routing and installer/compose behavior unchanged.
