@@ -54,16 +54,16 @@ func run(logger *slog.Logger) error {
 		logger.Info("initial administrator created", "username", administrator.Username)
 	}
 
-	var proxyHealth telemt.Checker
+	var proxyClient *telemt.Client
 	if cfg.TelemtAPIURL != "" {
 		client, err := telemt.NewFromTokenFile(cfg.TelemtAPIURL, cfg.TelemtAPITokenFile, 2*time.Second)
 		if err != nil {
 			return fmt.Errorf("configure Telemt client: %w", err)
 		}
-		proxyHealth = client
+		proxyClient = client
 	}
 
-	api := httpapi.NewWithProxyHealth(db, httpapi.Options{CookieSecure: cfg.CookieSecure}, proxyHealth)
+	api := httpapi.NewWithProxyClient(db, httpapi.Options{CookieSecure: cfg.CookieSecure}, proxyClient)
 	server := &http.Server{
 		Addr:              cfg.HTTPAddr,
 		Handler:           api.Handler(),
