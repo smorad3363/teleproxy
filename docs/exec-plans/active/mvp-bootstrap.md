@@ -3,28 +3,28 @@
 Status: ACTIVE
 Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
-Latest verified checkpoint: `5505a1e981270f38474cfbaccb40a8abc23e50e9`
+Latest verified checkpoint: `3664c7ce93264b4036ee87a1862aa1ae3634c41a`
 
 ## Purpose
 
-Build Teleproxy incrementally from an empty repository while keeping every milestone secure, independently verifiable, and recoverable from Git + this file without relying on chat history.
+Build Teleproxy incrementally from the supplied roadmap while keeping every milestone secure, independently verifiable, and recoverable from Git + this file without relying on chat history.
 
 ## Non-negotiable requirements
 
 - Control Plane and Proxy Data Plane have independent lifecycles.
 - Go + lightweight HTTP + SQLite for Control Plane; Telemt remains an external data-plane component.
-- Docker-first installer is rerun-safe, chooses/persists a random free high Panel port, and reveals first-install credentials only after health verification.
-- Telemt API is authenticated and never host-published; no Docker socket in Web App.
+- Docker-first installer is rerun-safe and does not expose the Telemt API on the host.
+- No Docker socket in the Web App.
 - No plaintext passwords, session/API/MTProto secrets, bot tokens, or private keys in logs/state.
 - Proxy-user secrets are reveal-once and never stored by Control Plane.
-- Desired state is persisted before data-plane reconciliation so Telemt outages cannot lose admin intent.
+- Desired state is persisted before data-plane reconciliation.
 - Credit Buckets with independent expiry are authoritative business state; Telemt quota/expiry is only an enforcement projection.
 
 ## Recovery protocol
 
 On interruption: read this plan; compare branch head with `Latest verified checkpoint`; inspect every later commit/file and CI result; repair the active partial milestone before starting another one; never reset/clean/force over unrelated work.
 
-## Completed stages/checkpoints
+## Completed checkpoints
 
 - Stage 1 — Repository foundation — PARTIAL. Architecture/security/reliability docs, plan, branch and CI exist. Remaining exact-byte root mirrors of supplied `AGENTS.md`, `ROADMAP_FA.md`, `ROADMAP_EN.md`; never commit partial mirrors.
 - CP-002 CI foundation: `084d4a1256a6b28412d9457f6568a4138e09c83c`, CI `34419759826` PASS.
@@ -43,17 +43,18 @@ On interruption: read this plan; compare branch head with `Latest verified check
 - CP-015 durable reconciliation phases: `4b8ea6ebd16d8499f0a3409d1962cddc4b014bac`, CI `34454816438` PASS.
 - CP-016 callable crash-safe reconciler: `23a9eb92fade84b66aa6ec7f4cce96f37de21325`, CI `34456452874` PASS.
 - CP-017 bounded reconciliation runner core: `5505a1e981270f38474cfbaccb40a8abc23e50e9`, CI `34458886839` PASS.
+- CP-018 Control Plane reconciliation wiring: `3664c7ce93264b4036ee87a1862aa1ae3634c41a`, CI `34462985548` PASS.
 
-### CP-017 implemented
+### CP-018 implemented
 
-- fixed worker pool with configurable/default-safe global concurrency; no goroutine-per-user fan-out
-- per-user deduplication: queued duplicates coalesce; duplicates arriving while a run is active request at most one pending rerun
-- successful active snapshots schedule the nearest `NextExpiry`/`NextStart` boundary through runner-owned timers
-- explicit trigger cancels stale boundary timer for that user
-- startup helper can enqueue all existing proxy users without waiting for Telemt network convergence
-- runner shutdown cancels timers and in-flight contexts; `Wait` is caller-bounded
-- reconciliation failures store only `QUOTA_RECONCILE_FAILED`, never raw upstream error text
-- focused tests cover concurrency bound, same-user exclusion/coalescing, startup trigger-all, narrow error persistence, timer retrigger and shutdown
+- configurable bounded reconciliation concurrency is wired through config and Compose
+- startup queues existing proxy users without making Control Plane startup depend on Telemt convergence
+- authenticated + CSRF-protected manual reconciliation endpoint is available
+- create/enable paths remain fail-closed: when the runner exists, Telemt stays disabled until quota projection has converged
+- create preserves the reveal-once secret even if later queueing fails
+- enable/disable queue reconciliation; rotate-secret remains independent
+- runner shutdown cancels timers/work and is waited with a bounded context before DB close
+- sync failures persist only narrow codes
 
 ## Supplied source hashes
 
@@ -70,55 +71,60 @@ Telemt 3.5.7, upstream commit `4ca7418442478cd92f9e861c21977a81b249efc8`:
 
 ## Active stage
 
-### Stage 6D2B2C3B — Control Plane reconciliation wiring — ACTIVE
+### Stage 7A — Telegram identity + idempotent start-gift domain — ACTIVE
 
-Purpose: wire the separately verified runner into startup/admin/lifecycle/shutdown paths without weakening reveal-once secret handling or fail-closed quota bootstrap.
+Roadmap basis: Phase 3 begins with `/start`; the flow resolves Telegram identity, creates a user only when new, creates the initial gift exactly once, then later resolves Forced Join/referrals/proxy links. Start gift must be configurable; default is 100MB.
 
 Scope only:
-- add `TPROXY_RECONCILE_CONCURRENCY` config, default 2, valid 1..32, and Compose pass-through
-- when Telemt is configured, create the verified Telemt reconciler + runner and enqueue existing users on startup
-- startup queueing must not wait for Telemt network success; worker failures remain asynchronous/narrow
-- add authenticated + CSRF-protected `POST /api/proxy/users/{username}/reconcile`
-- trigger runner after create and desired-enable/disable lifecycle mutations; rotate-secret remains unchanged
-- when a runner is configured, create a new Telemt user initially disabled even if DB desired state is enabled; this closes the pre-projection unlimited window while preserving DB desired=true and reveal-once secret response
-- if post-create trigger queueing fails, still return the reveal-once secret once and mark a narrow sync error; never discard a generated secret because a later queue action failed
-- stop runner at shutdown and wait only with a bounded context before DB close
-- no bot/referral/sponsor, broad UI redesign, or multi-node scheduler in this milestone
+- add durable Telegram-user identity mapped one-to-one to a proxy user
+- add a typed non-secret setting for configurable `start_gift_bytes` with safe default 100MB
+- add an idempotent transactional start/bootstrap application service: repeated `/start` for the same Telegram ID never creates another user or gift
+- create the initial Credit Bucket with an explicit idempotency key/source suitable for audit/recovery
+- generate a deterministic safe proxy username from Telegram ID; never use Telegram display names as identity
+- retain existing Credit Bucket ledger as the single quota/reward truth
+- no Telegram network transport/token/webhook, referral reward, Forced Join, sponsor, Bot Admin, or broad Web UI in this milestone
 
 Acceptance:
-- old constructors/tests remain compatible when no runner is configured
-- manual reconcile endpoint requires admin session + CSRF; returns no secret material
-- trigger errors expose/store only narrow codes, not upstream error bodies
-- desired-enabled create with runner creates Telemt user disabled until reconciler applies quota and restores desired state
-- enable/disable successful lifecycle mutations queue reconciliation; rotate does not
-- startup without Telemt remains functional and creates no runner/network work
-- config rejects invalid concurrency and Compose defaults it safely
-- Go format/vet/test and Docker/Telemt installer E2E remain green
+- concurrent/repeated bootstrap for one Telegram ID yields one Telegram user, one proxy user and one start-gift bucket
+- different Telegram IDs cannot map to the same proxy user
+- invalid/non-positive Telegram IDs and invalid gift settings are rejected
+- changing the configured start gift affects only future new users, never re-grants existing users
+- no secret material is added to SQLite
+- migrations are additive/rerun-safe; old database migration tests are updated
+- Go format/vet/test and existing Docker/Telemt E2E remain green
 
-Recovery point: CP-017. If interrupted during C3B, inspect every commit/file after `5505a1e...` and repair only Control Plane reconciliation wiring before starting any later roadmap feature.
+### Stage 7B — Telegram Bot transport + `/start` response — PENDING
+After 7A verification: add a narrow Bot API client/transport around the verified start service, token from a protected secret file only, safe update parsing/rate limits, and a user-facing start/menu response. Forced Join/referrals stay separate.
+
+### Stage 7C — Forced Join — PENDING
+Configurable required channels, membership checks, manual recheck, and fail-safe user messaging.
+
+### Stage 7D — Referrals + rewards — PENDING
+Unique-per-invitee referral attribution, self-referral protection, idempotent reward creation and configurable reward/expiry/caps; integrate with Credit Buckets.
 
 ## Important decisions/discoveries
 
 - Credit Bucket ledger is authoritative; Telemt is only an enforcement projection.
 - Telemt disable cancels active sessions and blocks new admission, so it is the fail-closed freeze primitive.
-- Telemt reset writes `used_bytes=0` and advances reset epoch; ambiguous reset is recognized by the persisted state machine.
 - Quota `0` means blocked, not unlimited.
 - SQLite stays single-connection in MVP so connection-scoped PRAGMAs remain reliable.
-- C2 crash-safety and C3A concurrency/timer behavior were verified independently before wiring them into process lifecycle.
+- Roadmap Phase 3 order is Bot start/user menu, Forced Join, referrals/rewards, proxy links; implementation is split into smaller independently verified milestones.
+- Bot token is a secret and will not be stored as an ordinary SQLite setting in 7A.
 
 ## Validation/failure log
 
-- Stage 5 `c1cde407...`, CI `34426475546`: bootstrap secret mode issue; strict validation kept and ownership/mode fixed.
+- Stage 5 `c1cde407...`, CI `34426475546`: bootstrap secret mode issue; validation kept strict and ownership/mode fixed.
 - Stage 5 `34b455b0...`, CI `34426870772`: E2E path harness bug; production unchanged.
 - Stage 6A `39349dcf...`, CI `34437891406`: unreliable port assertion; replaced with Docker HostConfig inspection.
 - Stage 6A `91722c95...`, CI `34438040249`: protected token harness read fixed; token remained 0600.
 - Stage 6B `0fbb8d72...`, CI `34438839369`: format-only failure; repaired at CP-007.
 - Stage 6D2B1 `86090aba...`, CI `34449178722`: PASS but superseded after self-review found missing future-start boundary; repaired at CP-012.
-- Stage 6D2B2A `44b3dc76...`, CI `34452143936`: migration-count failure from partial publication; final `2cc686fa...` passed at CP-013; no force/reset.
-- C3A `8040d4e305a07091bde91136daf4de6e1dea473e`, CI `34458741101`: format/vet PASS, tests failed because test helper used in-memory SQLite while production `database.Open` requires WAL. Production validation was not weakened; test switched to a temp file DB.
-- C3A repair `5505a1e981270f38474cfbaccb40a8abc23e50e9`, CI `34458886839`: Go + installer/Telemt E2E PASS; CP-017.
-- Full local Go suite remains unavailable in the container because external module DNS is unavailable; GitHub CI is authoritative. Local gofmt/YAML/SQL checks are supplementary.
+- Stage 6D2B2A `44b3dc76...`, CI `34452143936`: partial migration publication caused migration-count failure; final passed at CP-013; no force/reset.
+- C3A `8040d4e3...`, CI `34458741101`: tests used in-memory SQLite incompatible with required WAL; production validation unchanged; fixed at CP-017.
+- C3B `470ecb81...`, CI `34459855904`: two misspelled `http.StatusServiceUnavailable` constants caused vet failure; repaired without behavior change.
+- C3B repair `3664c7ce...`, CI `34462985548`: Go + installer/Telemt E2E PASS; CP-018.
+- Full local Go suite remains unavailable in the container because external module DNS is unavailable; GitHub CI is authoritative.
 
 ## Current next action
 
-Publish and verify only C3B Control Plane wiring from CP-017. On success, promote Stage 6D2B2C3 as complete before any bot/referral/sponsor or broader UI work.
+Implement only Stage 7A from CP-018: additive Telegram identity/settings schema plus an idempotent transactional start-gift service and focused concurrency/replay tests. Do not add Telegram network transport until 7A is separately verified.
