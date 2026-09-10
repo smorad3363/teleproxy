@@ -114,7 +114,7 @@ func run(logger *slog.Logger) error {
 		if err != nil {
 			return fmt.Errorf("configure Telegram proxy provisioning: %w", err)
 		}
-		startApplication, err := telegrambot.NewStartApplicationWithProvisioner(db, cfg.BotUsername, nil, provisioner)
+		startApplication, err := telegrambot.NewStartApplicationWithForcedJoin(db, cfg.BotUsername, nil, provisioner, botClient)
 		if err != nil {
 			return fmt.Errorf("configure Telegram start application: %w", err)
 		}

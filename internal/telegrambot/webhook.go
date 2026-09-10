@@ -201,6 +201,9 @@ func validateWebhookSecret(secret string) error {
 }
 
 func formatStartResponse(response StartResponse) string {
+	if len(response.MissingChannels) > 0 {
+		return formatMissingChannels(response.MissingChannels)
+	}
 	accountState := "ready"
 	if response.Created {
 		accountState = "created"
@@ -213,6 +216,36 @@ func formatStartResponse(response StartResponse) string {
 		proxyState = "ready"
 	}
 	return fmt.Sprintf("Teleproxy account %s.\nUser: %s\nRemaining credit: %d bytes\nProxy status: %s.\nProxy link:\n%s", accountState, response.ProxyUsername, response.RemainingBytes, proxyState, response.ProxyLink)
+}
+
+func formatMissingChannels(channels []StartRequiredChannel) string {
+	const maxMessageRunes = 4096
+	prefix := "Join the required Telegram channels before continuing:"
+	suffix := "\n\nAfter joining, send /start again."
+	truncated := "\n\nAdditional required channels are configured."
+
+	var builder strings.Builder
+	builder.WriteString(prefix)
+	used := len([]rune(prefix))
+	suffixRunes := len([]rune(suffix))
+	truncatedRunes := len([]rune(truncated))
+	for index, channel := range channels {
+		entry := "\n\n" + channel.DisplayName + "\n" + channel.JoinURL
+		if channel.CustomText != "" {
+			entry += "\n" + channel.CustomText
+		}
+		entryRunes := len([]rune(entry))
+		if used+entryRunes+suffixRunes > maxMessageRunes {
+			if index < len(channels) && used+truncatedRunes+suffixRunes <= maxMessageRunes {
+				builder.WriteString(truncated)
+			}
+			break
+		}
+		builder.WriteString(entry)
+		used += entryRunes
+	}
+	builder.WriteString(suffix)
+	return builder.String()
 }
 
 func sourceAddress(remote string) string {
