@@ -3,7 +3,7 @@
 Status: ACTIVE
 Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
-Latest verified checkpoint: `8e172246c3f7c4c656ead73424b1fcc9a3330d77`
+Latest verified checkpoint: `dd0656d8ea1725ab4a9de68899ae474031590ee2`
 
 ## Purpose and recovery
 
@@ -37,14 +37,16 @@ Non-negotiable: Control Plane and Telemt lifecycles remain independent; SQLite W
 - CP-023 crash-safe Bot provisioning + link response: `7560b7b17c288b9789e98d8f790bbb10dd79a21d`, CI `34472531024` PASS.
 - CP-024 Forced Join channel domain: `fbc825783409aa01908528d29afca9320edc7916`, CI `34475645129` PASS.
 - CP-025 Telegram membership + split start primitives: `8e172246c3f7c4c656ead73424b1fcc9a3330d77`, CI `34477880363` PASS.
+- CP-026 membership-gated Telegram start: `dd0656d8ea1725ab4a9de68899ae474031590ee2`, CI `34480254706` PASS.
 
-### CP-025 implemented
+### CP-026 implemented
 
-- Telegram Bot client now has bounded fail-closed `getChatMember` support; creator/administrator/member pass, restricted passes only with explicit `is_member=true`, left/kicked fail, and malformed/unknown/wrong-user responses are rejected.
-- chat references are independently revalidated at the Bot API boundary; canonical numeric IDs are encoded as JSON numbers and `@username` references as strings.
-- network/API failures reuse narrow safe Bot `FailureCode` values and never surface token-bearing request URLs or Telegram response descriptions.
-- Telegram bootstrap is split into `Resolve` and idempotent `EnsureStartGift`; identity can commit with zero Credit Buckets while the legacy `Start` wrapper remains atomic.
-- `Start` safely finishes a previously resolved identity, and concurrent `EnsureStartGift` replay grants exactly one idempotency-keyed bucket.
+- production Bot `/start` now follows `Resolve identity -> CheckRequired -> EnsureStartGift -> Balance -> CP-023 provisioning`.
+- a non-member may receive durable Telegram/proxy identity only; no start-gift Credit Bucket is granted and no Telemt provisioning call is made until all enabled required channels pass.
+- membership lookup errors remain fail-closed and return a retryable processing failure without granting credit/provisioning.
+- missing required channels are returned in deterministic configured order with safe display name/join URL/custom text; response rendering is bounded to Telegram message size.
+- zero required channels preserves the previously verified provisioning path, and legacy constructors that intentionally do not use Forced Join remain compatible.
+- production wiring reuses the same protected Bot client for membership checks; no additional token/client or secret persistence was introduced.
 
 ## Supplied source hashes
 
@@ -63,32 +65,29 @@ Telemt `3.5.7`, upstream commit `4ca7418442478cd92f9e861c21977a81b249efc8`.
 
 ## Active stage
 
-### Stage 7C1B — Membership-gated `/start` — ACTIVE
+### Stage 7C2A — Forced Join authenticated Admin CRUD API — ACTIVE
 
-Purpose: wire CP-024/CP-025 into the production Bot path so Forced Join is checked after durable identity resolution and before any start gift or Telemt provisioning.
+Roadmap basis: Forced Join must be manageable and supports multiple channels, enabled/disabled, required/optional campaign state, ordering and custom text. This milestone exposes that existing CP-024 domain through the authenticated Control Plane API only.
 
 Scope only:
-- production Bot start flow becomes `Resolve identity -> CheckRequired -> EnsureStartGift -> Balance -> CP-023 provisioning`
-- use the already configured Bot client as the Forced Join membership client; no second Bot token/client or secret storage
-- if one or more required channels are missing, return structured ordered channel metadata, grant no Credit Bucket and do not call provisioning
-- if membership checking errors, fail closed with no gift/provisioning; the already-resolved identity may remain durable
-- once every required membership passes, grant/replay the one-time gift and continue existing provisioning exactly as before
-- preserve existing constructors/tests that intentionally run without Forced Join; only the production Bot-enabled constructor/wiring must require membership gating
-- provide minimal safe text rendering for missing required channels; buttons/callback recheck and admin CRUD remain Stage 7C2
-- no referral/reward logic
+- extend `internal/forcedjoin` with validated list-all/get/update/delete operations while preserving read-time validation and deterministic ordering
+- add authenticated Admin API routes for list/create/update/delete Forced Join channels
+- all mutations require the existing admin session + `X-CSRF-Token`; reads require an authenticated admin session
+- JSON bodies are bounded, reject unknown fields, and map validation/not-found/conflict/internal failures to stable Problem Details codes without leaking SQLite/internal errors
+- deletion is explicit and affects only the selected channel; no broad settings rewrite or destructive migration
+- no Bot callbacks, recheck buttons, referral/reward logic, broad Web UI, or new secrets in C2A
 
 Acceptance:
-- non-member `/start` creates durable identity/proxy mapping but zero start-gift buckets and zero provisioning calls
-- replay after membership passes creates exactly one gift and provisions normally; further replay does not duplicate gift
-- multiple required channels all must pass and missing channel order matches configured position
-- disabled/optional channels do not block via CP-024 `ListRequired`
-- Telegram membership timeout/unauthorized/malformed response returns processing failure and cannot grant/provision
-- zero required channels preserves CP-023 behavior
-- production `cmd/control` wires the same Bot client into the gate
+- authenticated list returns all channel records in deterministic `position,id` order, including disabled/optional records for management
+- create/update enforce the same chat reference, Telegram URL, display/custom-text and position validation as CP-024
+- update can intentionally toggle enabled/required and reorder channels without replacing identity/timestamps incorrectly
+- delete returns not-found safely and does not affect unrelated channels
+- unauthenticated requests return 401; mutation without valid CSRF returns 403
+- malformed/oversized/unknown-field JSON is rejected with the shared Problem Details contract
 - format/vet/test and Docker/Telemt E2E remain green
 
-### Stage 7C2 — Forced Join configuration + manual recheck UX — PENDING
-Add authenticated admin CRUD for required channels plus Telegram join/recheck controls/messages. Keep callbacks authenticated by Telegram webhook context and make repeated recheck idempotent.
+### Stage 7C2B — Telegram manual recheck UX — PENDING
+Add join/recheck controls/messages on top of the verified gated `/start`. Recheck must reuse Telegram webhook authentication context and remain idempotent: repeated checks can only grant the existing one-time start gift once and cannot duplicate provisioning ownership. Keep callback payloads bounded and non-secret.
 
 ### Stage 7D — Referrals + rewards — PENDING
 Unique-per-invitee attribution, self-referral protection, idempotent reward Credit Buckets, configurable reward/expiry/caps, and Forced-Join eligibility integration.
@@ -101,6 +100,7 @@ Unique-per-invitee attribution, self-referral protection, idempotent reward Cred
 - Telemt user view reconstructs proxy links from Telemt-managed secret; Control Plane does not persist MTProto plaintext.
 - Telegram `getChatMember` for another user is only guaranteed when the Bot is an administrator in the target chat/channel; Forced Join therefore fails closed on API/configuration errors.
 - Forced Join gates the gift and proxy provisioning, not merely the final link. A non-member may have durable identity state but no Credit Bucket or Telemt user.
+- Forced Join management must reuse the authoritative domain validation rather than implement separate API-only validation rules.
 
 ## Validation/failure log
 
@@ -117,9 +117,10 @@ Unique-per-invitee attribution, self-referral protection, idempotent reward Cred
 - 7B3B `264c1f1f...`, CI `34472413695`: unused test import after safe test-file split caused vet failure; production unchanged. Repair `7560b7b1...`, CI `34472531024`, PASS.
 - CP-024 local pre-publish hardening rejected explicit ports in Telegram join URLs; SQLite migration smoke passed. CI `34475645129` passed.
 - CP-025 pre-publish isolated compile caught unsupported `testing.T.Context`; tests were repaired to `context.Background()` before branch publication. All four published blob SHAs matched local staging; CI `34477880363` passed.
+- CP-026 published exactly four scoped files; CI `34480254706` passed format/vet/test and Docker/Telemt installer E2E.
 - Unattached malformed/test Git objects created during earlier safe publishing checks were never referenced by the branch and do not affect repository state.
 - Full local Go suite remains unavailable because external module DNS is blocked in the container; GitHub CI is authoritative.
 
 ## Current next action
 
-Implement only Stage 7C1B from CP-025. Do not start admin configuration UX, callbacks, or referrals until membership-gated `/start` is separately verified.
+Implement only Stage 7C2A from CP-026. Do not start Telegram callbacks/recheck UX or referrals until the authenticated Forced Join Admin CRUD API is separately verified.
