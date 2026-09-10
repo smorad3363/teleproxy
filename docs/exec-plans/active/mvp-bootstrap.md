@@ -3,6 +3,7 @@
 Status: ACTIVE
 Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
+Latest verified checkpoint: `b98507bbb3ef0a74e6e147286c22ab7d626f9e72`
 
 ## Purpose
 
@@ -12,7 +13,7 @@ Build the first recoverable foundation of Teleproxy from an empty repository, fo
 
 - Control Plane and Proxy Data Plane remain lifecycle-independent.
 - Go + lightweight HTTP + embedded UI + SQLite for the Control Plane.
-- `telemt` is integrated as an external data-plane component; do not copy its source into this project.
+- `telemt` is an external data-plane component; do not copy its source into this project.
 - Installation is Docker-first and safe to rerun.
 - First installation selects a random available high port for the Web Panel, persists it, and does not silently change it on rerun.
 - Installer final output shows Panel URL, Panel port, admin username, generated initial credential/setup secret when needed, component health, version, data/config paths, and `tproxy` management command.
@@ -25,8 +26,8 @@ Build the first recoverable foundation of Teleproxy from an empty repository, fo
 
 When resuming after interruption:
 
-1. Read `AGENTS.md` when present and this execution plan.
-2. Inspect branch head and compare it to the last checkpoint below.
+1. Read `AGENTS.md` when present, `docs/ARCHITECTURE.md`, the subsystem document being changed, and this execution plan.
+2. Inspect branch head and compare it with `Latest verified checkpoint`.
 3. Inspect every file changed after that checkpoint.
 4. Re-run the targeted validation recorded for the partially completed milestone.
 5. If the last write was partial or inconsistent, repair that milestone before starting a new one.
@@ -36,46 +37,56 @@ When resuming after interruption:
 
 Each stage is intentionally small and independently verifiable. Do not broaden a stage while implementing it.
 
-### Stage 1 — Repository foundation
+### Stage 1 — Repository foundation — PARTIAL
 
-Scope:
-- repository-local recovery plan
-- canonical roadmap/instructions
-- architecture/security/reliability docs
-- CI skeleton and base project layout
+Completed:
+- active repository-local recovery plan
+- architecture boundaries
+- security baseline
+- reliability/recovery invariants
+- isolated task branch
 
-Acceptance:
-- a new agent can determine architecture, security boundaries, current stage, and next action from repository files alone.
+Remaining:
+- commit the supplied canonical `AGENTS.md` at repository root
+- mirror `ROADMAP_FA.md` / `ROADMAP_EN.md` at repository root
+- CI skeleton
 
-### Stage 2 — Minimal Control Plane
+Note: the connected GitHub text writer requires a complete payload per large file. Until the canonical large files are mirrored, the supplied uploaded files remain the task source and this plan records that gap explicitly.
 
-Scope:
+### Stage 2 — Minimal Control Plane — COMPLETE
+
+Implemented:
 - Go module
-- config loader with safe defaults
-- HTTP server
-- `/healthz` liveness and `/readyz` readiness
-- structured Problem Details error type
-- tests for config and health endpoints
+- validated `TPROXY_HTTP_ADDR` configuration with safe loopback default
+- HTTP server with timeouts and graceful shutdown
+- `/healthz` and `/readyz`
+- shared RFC 9457-style Problem Details representation
+- config and HTTP tests
 
-Acceptance:
-- `go test ./...` passes locally.
-- server starts with a configurable bind address.
+Validation actually run on the local staged source:
+- `gofmt -l cmd internal` -> clean
+- `GOTOOLCHAIN=local go test -v ./...` -> PASS
+- `GOTOOLCHAIN=local go vet ./...` -> PASS
 
-### Stage 3 — Core persistence + admin bootstrap
+Verified GitHub branch head after the Stage 2 writes:
+- `b98507bbb3ef0a74e6e147286c22ab7d626f9e72`
+
+### Stage 3 — Core persistence + admin bootstrap — ACTIVE
 
 Scope:
 - SQLite connection and migrations
 - WAL / foreign keys / busy timeout / synchronous NORMAL
 - admins table and one-time bootstrap credential
 - secure password hashing
-- login/session primitives
+- session storage primitives
 
 Acceptance:
-- migration test passes on a fresh DB.
-- password is never stored plaintext.
-- bootstrap is idempotent.
+- migration test passes on a fresh DB
+- password is never stored plaintext
+- bootstrap is idempotent
+- session tokens are not stored plaintext
 
-### Stage 4 — Minimal Web login
+### Stage 4 — Minimal Web login — PENDING
 
 Scope:
 - login page
@@ -84,12 +95,7 @@ Scope:
 - login rate limiting / brute-force delay
 - authenticated dashboard shell
 
-Acceptance:
-- unauthenticated dashboard redirects/rejects.
-- valid login works.
-- invalid login is generic and rate-limited.
-
-### Stage 5 — Installer foundation
+### Stage 5 — Installer foundation — PENDING
 
 Scope:
 - Docker Compose
@@ -99,38 +105,39 @@ Scope:
 - final install summary
 - safe rerun behavior
 
-Acceptance:
-- shell syntax checks pass.
-- port-selection test proves selected port is free at selection time.
-- rerun preserves the previously selected panel port.
-
-### Later stages
-
-Continue with telemt integration, Telegram Bot, referrals/credits, sponsors, RBAC, backups/update/rollback, watchdog, and relay support according to the roadmap.
-
 ## Checkpoints
 
 ### CP-000 — repository initialized
 
 - Commit: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
-- State: default branch initialized with README only.
 - Validation: GitHub repository write succeeded.
-- Known issue: canonical `AGENTS.md` and roadmap files still need to be committed on the task branch.
-- Next action: finish Stage 1 foundation files on `agent/mvp-bootstrap`.
+
+### CP-001 — minimal Control Plane verified
+
+- Commit: `b98507bbb3ef0a74e6e147286c22ab7d626f9e72`
+- Local validation: gofmt clean, `go test ./...` pass, `go vet ./...` pass.
+- Files: `go.mod`, `cmd/control/main.go`, `internal/config/*`, `internal/httpapi/*` plus Stage 1 docs.
+- Known gap: Stage 1 canonical large source mirrors and CI still pending.
+- Next action: implement Stage 3 locally, validate, then commit only the validated files.
 
 ## Decisions / discoveries
 
 - Repository was empty at task start.
-- Current upstream Telemt exposes a Control API with user management, quota/expiry, per-user ad tag, health and reload-related capabilities; integration should use that API rather than direct uncontrolled config editing where possible.
+- Current upstream Telemt exposes Control API capabilities needed for user management, quota/expiry, per-user AdTag, health and reload behavior; use the API integration boundary rather than uncontrolled direct config edits where possible.
 - Pin Telemt versions/checksums in deployment instead of following an unbounded `latest` tag.
 - Upstream Telemt has its own license/branding conditions; treat it as an external dependency and preserve required attribution.
+- The project `go` directive is currently `1.23` as a minimum language baseline for locally verified Stage 2 code; production builder images will be pinned independently to a currently supported Go release.
 
 ## Validation log
 
 - 2026-09-10: repository metadata inspected; repository confirmed empty before initialization.
 - 2026-09-10: default branch initial README commit created.
 - 2026-09-10: task branch `agent/mvp-bootstrap` created from baseline.
+- 2026-09-10: Stage 2 combined local command timed out at the tool transport layer; code was then inspected and checks rerun separately.
+- 2026-09-10: Stage 2 `go test -v ./...` passed.
+- 2026-09-10: Stage 2 `go vet ./...` passed.
+- 2026-09-10: GitHub branch head verified at CP-001.
 
 ## Current next action
 
-Finish Stage 1 repository foundation, update this plan with the resulting checkpoint, then immediately start Stage 2.
+Implement and validate Stage 3 core persistence + admin bootstrap. If interrupted, resume from CP-001 and inspect any commits after it before editing.
