@@ -11,6 +11,8 @@ services:
       TPROXY_BOOTSTRAP_ADMIN_USER: ${TPROXY_ADMIN_USER:-admin}
       TPROXY_BOOTSTRAP_PASSWORD_FILE: /run/teleproxy-secrets/admin-bootstrap-password
       TPROXY_COOKIE_SECURE: ${TPROXY_COOKIE_SECURE:-false}
+      TPROXY_TELEMT_API_URL: http://telemt:9091
+      TPROXY_TELEMT_API_TOKEN_FILE: /run/teleproxy-secrets/telemt-api-token
     ports:
       - "${TPROXY_PANEL_BIND:-0.0.0.0}:${TPROXY_PANEL_PORT:?panel port required}:8080"
     volumes:
@@ -23,3 +25,32 @@ services:
     read_only: true
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=16m
+    networks:
+      - teleproxy
+
+  telemt:
+    image: ${TPROXY_TELEMT_IMAGE:-teleproxy/telemt:3.5.7}
+    build:
+      context: .
+      dockerfile: docker/telemt/Dockerfile
+      args:
+        TELEMT_VERSION: 3.5.7
+    restart: unless-stopped
+    ports:
+      - "${TPROXY_PROXY_BIND:-0.0.0.0}:${TPROXY_PROXY_PORT:-443}:8443"
+    volumes:
+      - "${TPROXY_PROXY_DATA_DIR:?proxy data dir required}:/var/lib/telemt"
+      - "${TPROXY_TELEMT_CONFIG:?telemt config required}:/etc/telemt/config.toml:ro"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    networks:
+      - teleproxy
+
+networks:
+  teleproxy:
+    driver: bridge

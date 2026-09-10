@@ -49,5 +49,5 @@ jobs:
           docker version
           docker compose version
 
-      - name: End-to-end install and rerun
+      - name: End-to-end install, Telemt API isolation, and rerun
         run: bash tests/installer_e2e.sh

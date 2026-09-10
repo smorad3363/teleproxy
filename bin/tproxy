@@ -17,6 +17,16 @@ compose() {
 panel_port=$(read_state_value "$STATE_FILE" TPROXY_PANEL_PORT)
 panel_bind=$(read_state_value "$STATE_FILE" TPROXY_PANEL_BIND)
 admin_user=$(read_state_value "$STATE_FILE" TPROXY_ADMIN_USER)
+proxy_port=$(read_state_value "$STATE_FILE" TPROXY_PROXY_PORT 2>/dev/null || printf '443')
+
+proxy_health() {
+  local id status
+  id=$(compose ps -q telemt 2>/dev/null || true)
+  [[ -n "$id" ]] || { echo "Proxy Plane: not running"; return 1; }
+  status=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$id" 2>/dev/null || true)
+  printf 'Proxy Plane: %s (port %s)\n' "${status:-unknown}" "$proxy_port"
+  [[ "$status" == "healthy" ]]
+}
 
 case "${1:-status}" in
   status)
@@ -37,20 +47,33 @@ case "${1:-status}" in
     ;;
   doctor)
     docker info >/dev/null
+    failed=0
     if curl -fsS --max-time 3 "http://127.0.0.1:${panel_port}/readyz" >/dev/null; then
       echo "Control Plane: ready"
     else
       echo "Control Plane: not ready" >&2
+      failed=1
+    fi
+    proxy_health || failed=1
+    if [[ "$failed" == "1" ]]; then
       compose ps >&2 || true
       exit 1
     fi
+    ;;
+  proxy)
+    case "${2:-status}" in
+      status) proxy_health ;;
+      restart) compose restart telemt ;;
+      logs) compose logs --tail=200 telemt ;;
+      *) echo "usage: tproxy proxy {status|restart|logs}" >&2; exit 2 ;;
+    esac
     ;;
   config)
     cat "$STATE_FILE"
     ;;
   panel)
     host=127.0.0.1
-    if [[ "$panel_bind" != "127.0.0.1" && "$panel_bind" != "::1" ]]; then
+    if [[ "$panel_bind" != "127.0.0.1" ]]; then
       detected=$(hostname -I 2>/dev/null | awk '{print $1}' || true)
       [[ -n "$detected" ]] && host=$detected
     fi
@@ -58,7 +81,7 @@ case "${1:-status}" in
     printf 'Admin User: %s\n' "$admin_user"
     ;;
   *)
-    echo "usage: tproxy {status|logs|restart|start|stop|doctor|config|panel}" >&2
+    echo "usage: tproxy {status|logs|restart|start|stop|doctor|proxy|config|panel}" >&2
     exit 2
     ;;
 esac
