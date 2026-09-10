@@ -21,7 +21,7 @@ Non-negotiable architecture: SQLite WAL/NORMAL is authoritative Control Plane st
 - CP-007 Telemt health client: `c67874de95b2ca4ff1786ffbd349fb091f270647`, CI `34438961960` PASS.
 - CP-008 proxy lifecycle core: `281f91afca202d0cc9a61e64fe88fe7ebbea5aab`, CI `34445848656` PASS.
 - CP-009 authenticated lifecycle API: `24cec6f875fb5f56bfb97d8159d8fa2ac3b8e533`, CI `34446509254` PASS.
-- CP-010 Telemt quota/expiry contract: `907d818300f9cdb01456de043b3e98a74be4686532632`, CI `34447125904` PASS.
+- CP-010 Telemt quota/expiry contract: `907d818300f9cdb01473fecacf0cd76bd8db1438`, CI `34447125904` PASS.
 - CP-011 Credit Bucket ledger: `50baa6572c01bf320ac475339cc82a6710438de8`, CI `34448520864` PASS.
 - CP-012 quota usage + projection boundaries: `1013aca4ea01456de043b3e98a74be4686532632`, CI `34449339437` PASS.
 - CP-013 durable projection journal: `2cc686fa1da66b8cf3b37c1a6565d0bbb94520bf`, CI `34452322294` PASS.
@@ -127,7 +127,8 @@ Roadmap requires configurable daily/weekly caps, cooldowns, blacklist and suspic
 - CP-036 candidate `2abc393b...` CI `34510993603` PASS; docs `c1d93e72...` CI `34517423137` PASS.
 - CP-037 candidate `b16c08a5...` CI `34518089493` PASS; docs `bb0e2308...` CI `34518442647` PASS.
 - CP-038 candidate `c2599bde...` CI `34519237959` PASS on the first candidate. One initial unattached `create_commit` call was tool-blocked before any branch move; the same atomic tree was then committed normally and fast-forwarded. No repository state was lost or rewritten.
+- CP-038 promotion commit `b930b1f3...` contained a documentation-only typo in the historical CP-010 SHA; it was immediately repaired in the next fast-forward docs commit before any 9B code publication.
 
 ## Current next action
 
-Verify the CP-038 docs-head CI. Then implement only Stage 9B from CP-038: Node update/delete plus authenticated static metadata CRUD API. Keep current single-Telemt runtime routing, installer/compose, Sponsor assignment, Node runtime/lifecycle actions and blocked referral reward semantics unchanged.
+Verify the repaired CP-038 docs-head CI. Then implement only Stage 9B from CP-038: Node update/delete plus authenticated static metadata CRUD API. Keep current single-Telemt runtime routing, installer/compose, Sponsor assignment, Node runtime/lifecycle actions and blocked referral reward semantics unchanged.
