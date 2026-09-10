@@ -15,6 +15,7 @@ import (
 	"github.com/smorad3363/teleproxy/internal/config"
 	"github.com/smorad3363/teleproxy/internal/database"
 	"github.com/smorad3363/teleproxy/internal/httpapi"
+	"github.com/smorad3363/teleproxy/internal/quotareconcile"
 	"github.com/smorad3363/teleproxy/internal/telemt"
 )
 
@@ -54,16 +55,44 @@ func run(logger *slog.Logger) error {
 		logger.Info("initial administrator created", "username", administrator.Username)
 	}
 
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
 	var proxyClient *telemt.Client
+	var quotaRunner *quotareconcile.Runner
 	if cfg.TelemtAPIURL != "" {
 		client, err := telemt.NewFromTokenFile(cfg.TelemtAPIURL, cfg.TelemtAPITokenFile, 2*time.Second)
 		if err != nil {
 			return fmt.Errorf("configure Telemt client: %w", err)
 		}
 		proxyClient = client
+
+		reconciler, err := quotareconcile.NewTelemtReconciler(db, proxyClient, quotareconcile.Options{})
+		if err != nil {
+			return fmt.Errorf("configure quota reconciler: %w", err)
+		}
+		quotaRunner, err = quotareconcile.NewRunner(ctx, db, reconciler, quotareconcile.RunnerOptions{Concurrency: cfg.ReconcileConcurrency})
+		if err != nil {
+			return fmt.Errorf("configure quota reconciliation runner: %w", err)
+		}
+		defer func() {
+			quotaRunner.Stop()
+			waitCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := quotaRunner.Wait(waitCtx); err != nil {
+				logger.Warn("quota reconciliation runner did not stop cleanly")
+			}
+		}()
+
+		queueCtx, cancelQueue := context.WithTimeout(context.Background(), 5*time.Second)
+		err = quotaRunner.TriggerAll(queueCtx)
+		cancelQueue()
+		if err != nil {
+			return fmt.Errorf("queue startup quota reconciliation: %w", err)
+		}
 	}
 
-	api := httpapi.NewWithProxyClient(db, httpapi.Options{CookieSecure: cfg.CookieSecure}, proxyClient)
+	api := httpapi.NewWithProxyServices(db, httpapi.Options{CookieSecure: cfg.CookieSecure}, proxyClient, quotaRunner)
 	server := &http.Server{
 		Addr:              cfg.HTTPAddr,
 		Handler:           api.Handler(),
@@ -72,9 +101,6 @@ func run(logger *slog.Logger) error {
 		WriteTimeout:      cfg.WriteTimeout,
 		IdleTimeout:       cfg.IdleTimeout,
 	}
-
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -90,6 +116,9 @@ func run(logger *slog.Logger) error {
 	case err := <-errCh:
 		return err
 	case <-ctx.Done():
+		if quotaRunner != nil {
+			quotaRunner.Stop()
+		}
 	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

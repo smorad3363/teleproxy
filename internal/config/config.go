@@ -9,9 +9,10 @@ import (
 )
 
 const (
-	defaultHTTPAddr     = "127.0.0.1:8080"
-	defaultDatabasePath = "data/teleproxy.db"
-	defaultAdminUser    = "admin"
+	defaultHTTPAddr             = "127.0.0.1:8080"
+	defaultDatabasePath         = "data/teleproxy.db"
+	defaultAdminUser            = "admin"
+	defaultReconcileConcurrency = 2
 )
 
 type Config struct {
@@ -22,6 +23,7 @@ type Config struct {
 	CookieSecure          bool
 	TelemtAPIURL          string
 	TelemtAPITokenFile    string
+	ReconcileConcurrency  int
 	ReadHeaderTimeout     time.Duration
 	ReadTimeout           time.Duration
 	WriteTimeout          time.Duration
@@ -30,6 +32,10 @@ type Config struct {
 
 func Load() (Config, error) {
 	cookieSecure, err := envBool("TPROXY_COOKIE_SECURE", false)
+	if err != nil {
+		return Config{}, err
+	}
+	reconcileConcurrency, err := envIntRange("TPROXY_RECONCILE_CONCURRENCY", defaultReconcileConcurrency, 1, 32)
 	if err != nil {
 		return Config{}, err
 	}
@@ -42,6 +48,7 @@ func Load() (Config, error) {
 		CookieSecure:          cookieSecure,
 		TelemtAPIURL:          os.Getenv("TPROXY_TELEMT_API_URL"),
 		TelemtAPITokenFile:    os.Getenv("TPROXY_TELEMT_API_TOKEN_FILE"),
+		ReconcileConcurrency:  reconcileConcurrency,
 		ReadHeaderTimeout:     5 * time.Second,
 		ReadTimeout:           15 * time.Second,
 		WriteTimeout:          30 * time.Second,
@@ -79,6 +86,18 @@ func envBool(key string, fallback bool) (bool, error) {
 	parsed, err := strconv.ParseBool(value)
 	if err != nil {
 		return false, fmt.Errorf("%s must be a boolean", key)
+	}
+	return parsed, nil
+}
+
+func envIntRange(key string, fallback, minimum, maximum int) (int, error) {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback, nil
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed < minimum || parsed > maximum {
+		return 0, fmt.Errorf("%s must be an integer between %d and %d", key, minimum, maximum)
 	}
 	return parsed, nil
 }

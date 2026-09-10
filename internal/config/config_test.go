@@ -11,6 +11,7 @@ func TestLoadDefaults(t *testing.T) {
 		"TPROXY_COOKIE_SECURE",
 		"TPROXY_TELEMT_API_URL",
 		"TPROXY_TELEMT_API_TOKEN_FILE",
+		"TPROXY_RECONCILE_CONCURRENCY",
 	} {
 		t.Setenv(key, "")
 	}
@@ -34,6 +35,9 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.TelemtAPIURL != "" || cfg.TelemtAPITokenFile != "" {
 		t.Fatalf("Telemt client unexpectedly configured: %#v", cfg)
 	}
+	if cfg.ReconcileConcurrency != defaultReconcileConcurrency {
+		t.Fatalf("ReconcileConcurrency = %d, want %d", cfg.ReconcileConcurrency, defaultReconcileConcurrency)
+	}
 }
 
 func TestLoadRejectsInvalidAddress(t *testing.T) {
@@ -51,6 +55,7 @@ func TestLoadAcceptsExplicitSettings(t *testing.T) {
 	t.Setenv("TPROXY_COOKIE_SECURE", "true")
 	t.Setenv("TPROXY_TELEMT_API_URL", "http://telemt:9091")
 	t.Setenv("TPROXY_TELEMT_API_TOKEN_FILE", "/run/secrets/telemt-api-token")
+	t.Setenv("TPROXY_RECONCILE_CONCURRENCY", "4")
 
 	cfg, err := Load()
 	if err != nil {
@@ -61,6 +66,9 @@ func TestLoadAcceptsExplicitSettings(t *testing.T) {
 	}
 	if cfg.TelemtAPIURL != "http://telemt:9091" || cfg.TelemtAPITokenFile != "/run/secrets/telemt-api-token" {
 		t.Fatalf("unexpected Telemt config: %#v", cfg)
+	}
+	if cfg.ReconcileConcurrency != 4 {
+		t.Fatalf("ReconcileConcurrency = %d, want 4", cfg.ReconcileConcurrency)
 	}
 }
 
@@ -76,5 +84,16 @@ func TestLoadRejectsInvalidCookieSecure(t *testing.T) {
 	t.Setenv("TPROXY_COOKIE_SECURE", "maybe")
 	if _, err := Load(); err == nil {
 		t.Fatal("Load() error = nil, want boolean validation error")
+	}
+}
+
+func TestLoadRejectsInvalidReconcileConcurrency(t *testing.T) {
+	for _, value := range []string{"0", "33", "many"} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv("TPROXY_RECONCILE_CONCURRENCY", value)
+			if _, err := Load(); err == nil {
+				t.Fatalf("Load() accepted concurrency %q", value)
+			}
+		})
 	}
 }

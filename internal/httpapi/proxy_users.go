@@ -22,23 +22,32 @@ type proxyUserLifecycle interface {
 }
 
 func NewWithProxyClient(db *sql.DB, options Options, client *telemt.Client) *Server {
+	return NewWithProxyServices(db, options, client, nil)
+}
+
+func NewWithProxyServices(db *sql.DB, options Options, client *telemt.Client, trigger quotaReconcileTrigger) *Server {
 	if client == nil {
-		return newWithProxyDependencies(db, options, nil, nil)
+		return newWithProxyDependenciesAndReconciler(db, options, nil, nil, trigger)
 	}
-	return newWithProxyDependencies(db, options, client, client)
+	return newWithProxyDependenciesAndReconciler(db, options, client, client, trigger)
 }
 
 func newWithProxyDependencies(db *sql.DB, options Options, checker telemt.Checker, lifecycle proxyUserLifecycle) *Server {
+	return newWithProxyDependenciesAndReconciler(db, options, checker, lifecycle, nil)
+}
+
+func newWithProxyDependenciesAndReconciler(db *sql.DB, options Options, checker telemt.Checker, lifecycle proxyUserLifecycle, trigger quotaReconcileTrigger) *Server {
 	s := NewWithProxyHealth(db, options, checker)
-	s.registerProxyUserRoutes(lifecycle)
+	s.registerProxyUserRoutes(lifecycle, trigger)
+	s.registerQuotaReconcileRoutes(trigger)
 	return s
 }
 
-func (s *Server) registerProxyUserRoutes(lifecycle proxyUserLifecycle) {
+func (s *Server) registerProxyUserRoutes(lifecycle proxyUserLifecycle, trigger quotaReconcileTrigger) {
 	s.mux.HandleFunc("GET /api/proxy/users", s.handleProxyUsersList)
-	s.mux.HandleFunc("POST /api/proxy/users", s.handleProxyUserCreate(lifecycle))
-	s.mux.HandleFunc("POST /api/proxy/users/{username}/enable", s.handleProxyUserEnabled(lifecycle, true))
-	s.mux.HandleFunc("POST /api/proxy/users/{username}/disable", s.handleProxyUserEnabled(lifecycle, false))
+	s.mux.HandleFunc("POST /api/proxy/users", s.handleProxyUserCreate(lifecycle, trigger))
+	s.mux.HandleFunc("POST /api/proxy/users/{username}/enable", s.handleProxyUserEnabled(lifecycle, trigger, true))
+	s.mux.HandleFunc("POST /api/proxy/users/{username}/disable", s.handleProxyUserEnabled(lifecycle, trigger, false))
 	s.mux.HandleFunc("POST /api/proxy/users/{username}/rotate-secret", s.handleProxyUserRotate(lifecycle))
 }
 
@@ -55,7 +64,7 @@ func (s *Server) handleProxyUsersList(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"users": users})
 }
 
-func (s *Server) handleProxyUserCreate(lifecycle proxyUserLifecycle) http.HandlerFunc {
+func (s *Server) handleProxyUserCreate(lifecycle proxyUserLifecycle, trigger quotaReconcileTrigger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !s.requireAdminAPI(w, r, true) {
 			return
@@ -86,29 +95,45 @@ func (s *Server) handleProxyUserCreate(lifecycle proxyUserLifecycle) http.Handle
 			return
 		}
 		if lifecycle == nil {
-			s.markProxySyncFailure(w, r, created.Username, "TELEMT_NOT_CONFIGURED", http.StatusServiceUnavailable)
+			s.markProxySyncFailure(w, r, created.Username, "TELEMT_NOT_CONFIGURED", http.StatusServiceUnavaile)
 			return
 		}
-		credential, err := lifecycle.CreateUser(r.Context(), created.Username, created.DesiredEnable)
+		dataPlaneEnabled := created.DesiredEnable
+		if trigger != nil {
+			// New users stay fail-closed until quota bootstrap has been applied.
+			dataPlaneEnabled = false
+		}
+		credential, err := lifecycle.CreateUser(r.Context(), created.Username, dataPlaneEnabled)
 		if err != nil {
 			code, status := proxySyncFailure(err)
 			s.markProxySyncFailure(w, r, created.Username, code, status)
 			return
 		}
-		synced, err := proxyuser.MarkSynced(r.Context(), s.db, created.Username)
-		if err != nil {
-			s.writeInternalError(w, r)
-			return
+		responseUser := created
+		if trigger != nil {
+			if err := trigger.Trigger(created.Username); err != nil {
+				// Never suppress the reveal-once secret after Telemt already created it.
+				if failed, markErr := proxyuser.MarkSyncError(r.Context(), s.db, created.Username, quotaReconcileUnavailableCode); markErr == nil {
+					responseUser = failed
+				}
+			}
+		} else {
+			synced, err := proxyuser.MarkSynced(r.Context(), s.db, created.Username)
+			if err != nil {
+				s.writeInternalError(w, r)
+				return
+			}
+			responseUser = synced
 		}
 		w.Header().Set("Cache-Control", "no-store")
 		writeJSON(w, http.StatusCreated, struct {
 			User   proxyuser.User `json:"user"`
 			Secret string         `json:"secret"`
-		}{User: synced, Secret: credential.Secret})
+		}{User: responseUser, Secret: credential.Secret})
 	}
 }
 
-func (s *Server) handleProxyUserEnabled(lifecycle proxyUserLifecycle, enabled bool) http.HandlerFunc {
+func (s *Server) handleProxyUserEnabled(lifecycle proxyUserLifecycle, trigger quotaReconcileTrigger, enabled bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !s.requireAdminAPI(w, r, true) {
 			return
@@ -128,14 +153,29 @@ func (s *Server) handleProxyUserEnabled(lifecycle proxyUserLifecycle, enabled bo
 			return
 		}
 		if lifecycle == nil {
-			s.markProxySyncFailure(w, r, pending.Username, "TELEMT_NOT_CONFIGURED", http.StatusServiceUnavailable)
+			s.markProxySyncFailure(w, r, pending.Username, "TELEMT_NOT_CONFIGURED", http.StatusServiceUnavaile)
 			return
 		}
-		if _, err := lifecycle.SetUserEnabled(r.Context(), pending.Username, enabled); err != nil {
+		dataPlaneEnabled := enabled
+		if trigger != nil {
+			// Never enable before the current quota projection has been reconciled.
+			dataPlaneEnabled = false
+		}
+		if _, err := lifecycle.SetUserEnabled(r.Context(), pending.Username, dataPlaneEnabled); err != nil {
 			code, status := proxySyncFailure(err)
 			s.markProxySyncFailure(w, r, pending.Username, code, status)
 			return
 		}
+		if trigger != nil {
+			if err := trigger.Trigger(pending.Username); err != nil {
+				s.markProxySyncFailure(w, r, pending.Username, quotaReconcileUnavailableCode, http.StatusServiceUnavailable)
+				return
+			}
+			w.Header().Set("Cache-Control", "no-store")
+			writeJSON(w, http.StatusOK, map[string]any{"user": pending})
+			return
+		}
+
 		synced, err := proxyuser.MarkSynced(r.Context(), s.db, pending.Username)
 		if err != nil {
 			s.writeInternalError(w, r)
