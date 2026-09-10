@@ -3,7 +3,7 @@
 Status: ACTIVE
 Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
-Latest verified checkpoint: `47a95349922ba5be37cf0ed8416b482de08580ef`
+Latest verified checkpoint: `c67874de95b2ca4ff1786ffbd349fb091f270647`
 
 ## Purpose
 
@@ -27,7 +27,7 @@ Build the first recoverable foundation of Teleproxy from an empty repository, fo
 When resuming after interruption:
 
 1. Read `AGENTS.md` when present, `docs/ARCHITECTURE.md`, the relevant subsystem document, and this execution plan.
-2. Inspect branch head and compare it with `Latest verified checkpoint` and any stage candidate recorded below.
+2. Inspect branch head and compare it with `Latest verified checkpoint` and any active stage candidate.
 3. Inspect every file changed after the verified checkpoint.
 4. Re-run or inspect targeted validation for the partially completed milestone.
 5. If the last write was partial, failed CI, or inconsistent, repair that milestone before starting a new one.
@@ -101,29 +101,44 @@ Implemented:
 
 Architecture note: the project bridge is not Docker `internal:true` because Telemt needs outbound Telegram connectivity. API isolation is no host publication plus Bearer authentication.
 
-### Stage 6B — Control Plane Telemt client adapter — ACTIVE
+### Stage 6B — Control Plane Telemt client adapter — COMPLETE
 
-Candidate scope:
+Verified commit: `c67874de95b2ca4ff1786ffbd349fb091f270647`
+CI `34438961960` PASS.
+
+Implemented:
 - focused `internal/telemt` Go client
-- load API URL and protected Bearer-token file without logging token contents
+- protected Bearer-token file loading without token logging
 - bounded HTTP timeout and response-body limit
-- safe typed states: `healthy`, `unauthorized`, `unavailable`, `invalid_response`, `not_configured`
-- validate Telemt URL/token-file configuration pair
-- wire the client without any startup network dependency
+- safe typed health states: `healthy`, `unauthorized`, `unavailable`, `invalid_response`, `not_configured`
+- Telemt URL/token-file pair validation
+- client wiring without startup network dependency
 - authenticated `GET /api/system/proxy` admin status surface
-- keep `/readyz` independent of Telemt health
+- `/readyz` remains independent of Telemt health
+- auth, timeout, malformed-response and non-leakage tests
+
+### Stage 6C — Proxy user lifecycle slice — ACTIVE
+
+Scope for this milestone only:
+- define persistent Control Plane proxy-user records separate from admin users
+- extend `internal/telemt` with typed create/list/enable/disable/rotate-secret operations
+- expose authenticated admin JSON endpoints for create/list/enable/disable/rotate
+- never persist or log plaintext MTProto secrets after initial return
+- represent reconciliation state so a Telemt outage does not corrupt the desired DB state
+- keep disabled Telemt bootstrap user internal and excluded from Control Plane user listings
 
 Acceptance:
-- Authorization header is sent to Telemt `/v1/health`
-- token is never returned in status/errors/logs
-- malformed, auth, unavailable and timeout paths are classified without raw upstream body leakage
-- unauthenticated proxy-status requests are rejected
-- Telemt outage does not make Control Plane `/readyz` fail
-- Go format/vet/test and existing installer E2E remain green
+- creating a proxy user stores desired metadata and provisions Telemt when available
+- list returns Control Plane users without secrets
+- enable/disable updates desired state and Telemt idempotently
+- rotate returns a new secret once and does not persist plaintext
+- Telemt unavailable paths return a safe classification while preserving recoverable desired state
+- unauthenticated lifecycle requests are rejected
+- Go format/vet/test and existing Docker/Telemt installer E2E stay green
 
-### Stage 6C — Proxy user lifecycle — PENDING
+### Stage 6D — Quota/expiry reconciliation — PENDING
 
-After 6B, implement the first DB-to-Telemt user lifecycle slice (create/list/enable/disable/rotate) with reconciliation and no secret leakage before adding broader quota/referral/bot features.
+After the lifecycle slice is verified, add expiry/quota policy and reconciliation separately before broader referral/bot features.
 
 ## Checkpoints
 
@@ -152,7 +167,11 @@ After 6B, implement the first DB-to-Telemt user lifecycle slice (create/list/ena
 ### CP-006 — pinned Telemt data plane verified
 - Commit: `47a95349922ba5be37cf0ed8416b482de08580ef`
 - CI: `34438212903` PASS
-- Recovery point: inspect every commit/file after CP-006. If Stage 6B has started, repair/finish it before any proxy user lifecycle work.
+
+### CP-007 — authenticated Telemt health adapter verified
+- Commit: `c67874de95b2ca4ff1786ffbd349fb091f270647`
+- CI: `34438961960` PASS
+- Recovery point: inspect every commit/file after CP-007. If Stage 6C has started, repair/finish it before quota, referral, bot, or UI expansion work.
 
 ## Decisions / discoveries
 
@@ -165,6 +184,7 @@ After 6B, implement the first DB-to-Telemt user lifecycle slice (create/list/ena
 - SQLite remains single-connection in MVP so connection-scoped PRAGMAs cannot silently disappear.
 - Initial admin password uses a protected bootstrap file and is displayed only once after verified install.
 - Random Panel port is not a security boundary; TLS hardening remains required for production public exposure.
+- Proxy user secrets must be treated as reveal-once credentials; desired metadata belongs in SQLite, plaintext secrets do not.
 
 ## Validation / failure log
 
@@ -178,8 +198,9 @@ After 6B, implement the first DB-to-Telemt user lifecycle slice (create/list/ena
 - 2026-09-10: Stage 6A `91722c95...`, CI `34438040249` then failed because shell redirection read protected token before `sudo`; token stayed `0600`, harness changed to `sudo cat`.
 - 2026-09-10: Stage 6A `47a95349...`, CI `34438212903` PASS; CP-006.
 - 2026-09-10: canonical source files re-materialized and SHA-256 values matched the original recorded hashes. Exact repository mirror still blocked by connector large-file transport; no partial files committed.
-- 2026-09-10: Stage 6B local isolated tests for `internal/telemt` and `internal/config` PASS under Go 1.23; integration compile/test is delegated to pinned CI Go 1.27.1 because repository minimum is Go 1.26.
+- 2026-09-10: Stage 6B candidate `0fbb8d72...`, CI `34438839369` failed only at format check; no tests ran.
+- 2026-09-10: gofmt-only repair `c67874de...`, CI `34438961960` PASS for Go and installer/Telemt E2E; CP-007.
 
 ## Current next action
 
-Publish the coherent Stage 6B candidate from CP-006, run Go format/vet/test plus existing installer/Telemt E2E, repair Stage 6B on any failure, and promote to CP-007 only after all checks pass.
+Implement Stage 6C as a bounded lifecycle slice from CP-007. If interrupted, inspect every file after CP-007, repair Stage 6C first, and only promote after Go plus existing Docker/Telemt E2E are green.
