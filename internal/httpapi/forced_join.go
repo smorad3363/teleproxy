@@ -35,6 +35,7 @@ func NewWithProxyServicesAndForcedJoin(db *sql.DB, options Options, client *tele
 }
 
 func (s *Server) registerForcedJoinRoutes() {
+	s.mux.HandleFunc("GET /forced-join", s.handleForcedJoinPage)
 	s.mux.HandleFunc("GET /api/forced-join/channels", s.handleForcedJoinList)
 	s.mux.HandleFunc("POST /api/forced-join/channels", s.handleForcedJoinCreate)
 	s.mux.HandleFunc("PUT /api/forced-join/channels/{id}", s.handleForcedJoinUpdate)
