@@ -17,12 +17,16 @@ var (
 
 type ReconciliationPhase string
 
-const PhaseApplying ReconciliationPhase = "applying"
+const (
+	PhaseApplying ReconciliationPhase = "applying"
+	PhaseActive   ReconciliationPhase = "active"
+)
 
 type ProjectionMemberSnapshot struct {
 	Position       int   `json:"position"`
 	BucketID       int64 `json:"bucket_id"`
 	AllowanceBytes int64 `json:"allowance_bytes"`
+	AccountedBytes int64 `json:"accounted_bytes"`
 }
 
 type ReconciliationSnapshot struct {
@@ -227,7 +231,7 @@ WHERE proxy_user_id = ?`, userID)
 	}
 
 	rows, err := db.QueryContext(ctx, `
-SELECT position, bucket_id, allowance_bytes
+SELECT position, bucket_id, allowance_bytes, accounted_bytes
 FROM quota_projection_members
 WHERE proxy_user_id = ? AND generation = ?
 ORDER BY position`, userID, snapshot.Generation)
@@ -240,11 +244,11 @@ ORDER BY position`, userID, snapshot.Generation)
 	members := make([]ProjectionMemberSnapshot, 0)
 	for rows.Next() {
 		var member ProjectionMemberSnapshot
-		if err := rows.Scan(&member.Position, &member.BucketID, &member.AllowanceBytes); err != nil {
+		if err := rows.Scan(&member.Position, &member.BucketID, &member.AllowanceBytes, &member.AccountedBytes); err != nil {
 			return ReconciliationSnapshot{}, fmt.Errorf("scan quota projection member: %w", err)
 		}
-		if member.Position != len(members) || member.BucketID <= 0 || member.AllowanceBytes <= 0 {
-			return ReconciliationSnapshot{}, fmt.Errorf("quota projection member ordering is invalid")
+		if member.Position != len(members) || member.BucketID <= 0 || member.AllowanceBytes <= 0 || member.AccountedBytes < 0 || member.AccountedBytes > member.AllowanceBytes {
+			return ReconciliationSnapshot{}, fmt.Errorf("quota projection member ordering or accounting is invalid")
 		}
 		if _, exists := seenBuckets[member.BucketID]; exists {
 			return ReconciliationSnapshot{}, fmt.Errorf("quota projection contains duplicate bucket")
