@@ -32,6 +32,14 @@ type messageSender interface {
 	SendMessage(context.Context, int64, string) (SentMessage, error)
 }
 
+type inlineKeyboardSender interface {
+	SendMessageWithInlineKeyboard(context.Context, int64, string, InlineKeyboardMarkup) (SentMessage, error)
+}
+
+type callbackQueryAnswerer interface {
+	AnswerCallbackQuery(context.Context, string, string) error
+}
+
 type WebhookHandler struct {
 	secretDigest [32]byte
 	start        startUpdateHandler
@@ -165,6 +173,11 @@ func (h *WebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
+	if update.CallbackQuery != nil {
+		h.handleCallbackResult(r.Context(), *update.CallbackQuery, response, err)
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	if errors.Is(err, ErrInvalidStartPayload) {
 		_, _ = h.sender.SendMessage(r.Context(), update.Message.Chat.ID, "This start link is invalid.")
 		w.WriteHeader(http.StatusNoContent)
@@ -178,8 +191,34 @@ func (h *WebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Once the idempotent start transaction has committed, an outbound Bot API
 	// failure must not roll it back. Returning success also avoids Telegram
 	// replaying an ambiguously-sent message and creating duplicate replies.
-	_, _ = h.sender.SendMessage(r.Context(), response.ChatID, formatStartResponse(response))
+	h.sendStartResponse(r.Context(), response)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *WebhookHandler) handleCallbackResult(ctx context.Context, query CallbackQuery, response StartResponse, appErr error) {
+	answer := "Membership verified."
+	if appErr != nil {
+		answer = "Membership check failed. Try again."
+	} else if len(response.MissingChannels) > 0 {
+		answer = "Join all required channels, then recheck."
+	}
+	if callbackSender, ok := h.sender.(callbackQueryAnswerer); ok {
+		_ = callbackSender.AnswerCallbackQuery(ctx, query.ID, answer)
+	}
+	if appErr == nil {
+		h.sendStartResponse(ctx, response)
+	}
+}
+
+func (h *WebhookHandler) sendStartResponse(ctx context.Context, response StartResponse) {
+	text := formatStartResponse(response)
+	if len(response.MissingChannels) > 0 {
+		if keyboardSender, ok := h.sender.(inlineKeyboardSender); ok {
+			_, _ = keyboardSender.SendMessageWithInlineKeyboard(ctx, response.ChatID, text, forcedJoinKeyboard(response.MissingChannels))
+			return
+		}
+	}
+	_, _ = h.sender.SendMessage(ctx, response.ChatID, text)
 }
 
 func (h *WebhookHandler) authorized(candidate string) bool {
@@ -221,7 +260,7 @@ func formatStartResponse(response StartResponse) string {
 func formatMissingChannels(channels []StartRequiredChannel) string {
 	const maxMessageRunes = 4096
 	prefix := "Join the required Telegram channels before continuing:"
-	suffix := "\n\nAfter joining, send /start again."
+	suffix := "\n\nAfter joining, tap Recheck below or send /start again."
 	truncated := "\n\nAdditional required channels are configured."
 
 	var builder strings.Builder
