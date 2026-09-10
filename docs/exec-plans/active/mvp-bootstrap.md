@@ -3,7 +3,7 @@
 Status: ACTIVE
 Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
-Latest verified checkpoint: `2e83b4770dd8e26fc5c0ebcca8dee6aa51111254`
+Latest verified checkpoint: `457f52783f9b2962c55be00beb801f0f2534958c`
 
 ## Purpose
 
@@ -16,7 +16,7 @@ Build the first recoverable foundation of Teleproxy from an empty repository, fo
 - `telemt` is an external data-plane component; do not copy its source into this project.
 - Installation is Docker-first and safe to rerun.
 - First installation selects a random available high port for the Web Panel, persists it, and does not silently change it on rerun.
-- Installer final output shows Panel URL, Panel port, admin username, generated initial credential/setup secret when needed, component health, version/ref, data/config paths, and `tproxy` management command.
+- Installer final output shows Panel URL, Panel port, admin username, generated initial credential when needed, component health, version/ref, data/config paths, and `tproxy` command.
 - Telemt management API must not be published publicly; keep it on an internal network and authenticate requests.
 - Never mount `/var/run/docker.sock` into the Web App.
 - No plaintext passwords, bot tokens, session secrets, MTProto secrets, API bearer values, or private keys in logs.
@@ -26,7 +26,7 @@ Build the first recoverable foundation of Teleproxy from an empty repository, fo
 
 When resuming after interruption:
 
-1. Read `AGENTS.md` when present, `docs/ARCHITECTURE.md`, the subsystem document being changed, and this execution plan.
+1. Read `AGENTS.md` when present, `docs/ARCHITECTURE.md`, the relevant subsystem document, and this execution plan.
 2. Inspect branch head and compare it with `Latest verified checkpoint` and any stage candidate recorded below.
 3. Inspect every file changed after the verified checkpoint.
 4. Re-run or inspect targeted validation for the partially completed milestone.
@@ -45,7 +45,7 @@ Completed:
 - security baseline
 - reliability/recovery invariants
 - isolated task branch
-- minimal Go CI workflow with read-only repository permission
+- CI with Go and installer checks
 
 Remaining:
 - commit the supplied canonical `AGENTS.md` at repository root
@@ -70,52 +70,52 @@ Implemented SQLite WAL/foreign keys/busy timeout/NORMAL sync, migrations, owner 
 Verified commit: `2e83b4770dd8e26fc5c0ebcca8dee6aa51111254`
 CI run: `34420655852` PASS (format, vet, test).
 
+Implemented DB startup/migration, protected one-time owner bootstrap, DB-backed expiring sessions, login/dashboard, `HttpOnly`/`SameSite=Strict` cookie handling, CSRF, generic credential failures, direct-peer login rate limiting and database readiness.
+
+### Stage 5 — Installer foundation — COMPLETE
+
+Verified commit: `457f52783f9b2962c55be00beb801f0f2534958c`
+Verified CI run: `34427021157` PASS.
+
 Implemented:
-- Control Plane opens/migrates SQLite on startup
-- first-admin bootstrap from a protected file, only when no admin exists
-- no plaintext administrator password in DB/logging
-- persisted server-side admin sessions with hashed token storage and expiry/revocation
-- login page and authenticated dashboard shell
-- `HttpOnly`/`SameSite=Strict` session cookies with configurable `Secure`
-- CSRF protection for login/logout
-- generic invalid-login error
-- direct-peer login rate limiting
-- database readiness check
-- database file permission hardening to `0600`
+- multi-stage non-root Control Plane Docker image
+- Compose service with no Docker socket, `no-new-privileges`, dropped capabilities and read-only root filesystem
+- exclusive installer lock and persistent install state
+- random high Panel port selection and persistence
+- explicit conflict refusal for an already-persisted port
+- first-install bootstrap password generated from `/dev/urandom`
+- bootstrap secret owner-only (`0600`) for container UID 10001 and removed after successful first install
+- final install summary with Panel URL/port, admin credential on first success, Control/Proxy status, source ref and paths
+- `tproxy` status/logs/restart/start/stop/doctor/config/panel commands
+- installer library tests plus real Docker install/rerun E2E
 
-### Stage 5 — Installer foundation — ACTIVE
-
-Scope:
-- hardened multi-stage Control Plane Docker image
-- Docker Compose for the Control Plane with no Docker socket, dropped capabilities and read-only root filesystem where practical
-- idempotent host installer with an exclusive lock and persistent install state
-- random high Panel port selection, host/Docker conflict check and persistence
-- safe retry after interruption: reuse healthy partial install, or reselect an unavailable port only before install is marked complete
-- cryptographically random initial admin password delivered through a protected bootstrap file
-- do not retain/reprint the initial plaintext password after a verified first install
-- final install summary showing Panel URL/port, admin user/password on first successful bootstrap, Control Plane health, Proxy Plane status, ref/version, data/config paths and `tproxy` command
-- minimal `tproxy` manager commands for status/logs/restart/doctor/config
-- shell/unit tests for installer state and port behavior
-- CI shell validation
-
-Acceptance:
-- `bash -n` passes for installer/manager/test scripts
-- installer unit tests pass without Docker by stubbing host probes
-- first install selects and persists a free high Panel port
-- rerun after completed install preserves Panel port
-- interrupted install with an unavailable unverified port can recover by selecting a new free port
-- generated password file has restrictive permissions and is removed after successful bootstrap summary
-- Compose does not mount `/var/run/docker.sock`
-- Compose publishes only the selected Panel host port for this stage
-- Go CI still passes
+Acceptance verified by CI:
+- Go format/vet/test PASS
+- installer shell syntax PASS
+- installer unit tests PASS
+- Docker/Compose available in E2E runner
+- first install reaches `/readyz`
+- generated password is displayed once and secret file is removed afterward
+- second install preserves the exact same Panel port
+- second install does not reprint initial plaintext password
+- manager resolves the installed panel
 
 ### Stage 6 — Telemt integration — PENDING
 
-Scope after Stage 5:
-- pin upstream Telemt version/checksum
+Scope:
+- re-verify and pin upstream Telemt release/version/checksum
 - add internal-only Telemt service/API network boundary
-- authenticated Telemt client adapter and health
-- initial proxy-node configuration and user lifecycle integration
+- generate Telemt API authorization secret without logging it
+- authenticated Telemt client adapter and health probe
+- initial proxy-node configuration suitable for later user lifecycle integration
+- do not expose Telemt Control API as a host port
+
+Acceptance:
+- pinned Telemt artifact is checksum-verified before use
+- Telemt API is reachable from Control Plane network but not published on host
+- API auth is required
+- adapter health test handles healthy, unauthorized and unavailable states
+- existing installer E2E and Go CI remain green
 
 ## Checkpoints
 
@@ -136,7 +136,11 @@ Scope after Stage 5:
 ### CP-004 — secure admin web login verified
 - Commit: `2e83b4770dd8e26fc5c0ebcca8dee6aa51111254`
 - CI: `34420655852` PASS
-- Recovery point: if Stage 5 is interrupted, inspect every commit/file after CP-004 and repair Stage 5 before starting Telemt integration.
+
+### CP-005 — Docker installer and rerun verified
+- Commit: `457f52783f9b2962c55be00beb801f0f2534958c`
+- CI: `34427021157` PASS
+- Recovery point: if interrupted after this checkpoint, inspect every commit/file after CP-005. Finish the repository-source mirror checkpoint if active; otherwise resume Stage 6. Do not reopen Stage 5 unless evidence shows a regression.
 
 ## Decisions / discoveries
 
@@ -147,19 +151,18 @@ Scope after Stage 5:
 - No Telemt source is copied into Teleproxy; preserve upstream license/branding requirements where applicable.
 - SQLite remains single-connection in the MVP so connection-scoped PRAGMAs cannot silently disappear.
 - Initial admin password is passed through a protected bootstrap file, never a plaintext command-line argument or normal log field.
-- Stage 5 will mount a secrets directory rather than a single required secret file so the bootstrap file can be deleted after first success without breaking later container restarts.
-- Stage 5 is Control Plane installation only; the final summary must explicitly report Proxy Plane as not configured until Stage 6 rather than pretending it is healthy.
+- The random panel port is convenience/obscurity only, not a security boundary; Stage 5 remains HTTP-only and later hardening must add TLS before treating public exposure as production-ready.
 
-## Validation log
+## Validation / failure log
 
 - 2026-09-10: repository initialized and isolated branch created.
-- 2026-09-10: Stage 2 local format/test/vet PASS.
-- 2026-09-10: CI run `34419759826` PASS.
-- 2026-09-10: Stage 3 CI run `34420104043` PASS.
-- 2026-09-10: Stage 4 candidate `2e83b477...` committed atomically.
-- 2026-09-10: Stage 4 CI run `34420655852` PASS; Stage 4 promoted to CP-004.
-- 2026-09-10: Stage 5 started.
+- 2026-09-10: Stage 2 local format/test/vet PASS; CI `34419759826` PASS.
+- 2026-09-10: Stage 3 CI `34420104043` PASS.
+- 2026-09-10: Stage 4 CI `34420655852` PASS; promoted to CP-004.
+- 2026-09-10: Stage 5 candidate `c1cde407...`; CI `34426475546` failed E2E because bootstrap secret was group-readable (`0640`) and backend correctly rejected it. Fixed by keeping backend validation and changing the secret to UID 10001 ownership + `0600`.
+- 2026-09-10: Stage 5 fix `34b455b0...`; CI `34426870772` reached post-install manager assertion but failed because the E2E harness omitted its temporary `TPROXY_INSTALL_DIR`. Production behavior was not changed; harness corrected.
+- 2026-09-10: Stage 5 final candidate `457f5278...`; CI `34427021157` PASS including Go, shell/unit checks and real Docker first-install + rerun E2E. Promoted to CP-005.
 
 ## Current next action
 
-Implement Stage 5 as one coherent candidate, validate shell behavior locally and in CI, then promote it only after Go and installer checks pass. If interrupted, recover from CP-004 and inspect all Stage 5 changes before editing.
+First close the remaining Stage 1 recovery-source gap by committing the exact supplied `AGENTS.md`, `ROADMAP_FA.md`, and `ROADMAP_EN.md` into the repository as one documentation-only checkpoint. Then begin Stage 6 Telemt integration from CP-005 plus that documentation checkpoint.
