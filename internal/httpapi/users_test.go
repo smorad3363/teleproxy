@@ -1,0 +1,125 @@
+package httpapi
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"net/http"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/smorad3363/teleproxy/internal/admin"
+	"github.com/smorad3363/teleproxy/internal/telegramuser"
+	"github.com/smorad3363/teleproxy/internal/useradmin"
+)
+
+func TestUserInventoryAPIRequiresAuthenticationAndIsNoStore(t *testing.T) {
+	db := testDB(t)
+	server, cookie := authenticatedUserInventoryAPI(t, db)
+
+	unauthorized := performJSON(server.Handler(), http.MethodGet, "/api/users", "", nil, "")
+	if unauthorized.Code != http.StatusUnauthorized || !strings.Contains(unauthorized.Body.String(), `"code":"AUTH_REQUIRED"`) {
+		t.Fatalf("unauthorized users = %d %s", unauthorized.Code, unauthorized.Body.String())
+	}
+	authorized := performJSON(server.Handler(), http.MethodGet, "/api/users", "", cookie, "")
+	if authorized.Code != http.StatusOK {
+		t.Fatalf("authorized users = %d %s", authorized.Code, authorized.Body.String())
+	}
+	if got := authorized.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("users Cache-Control = %q", got)
+	}
+	if !strings.Contains(authorized.Body.String(), `"users":[]`) {
+		t.Fatalf("empty users body = %s", authorized.Body.String())
+	}
+}
+
+func TestUserInventoryAPIPaginatesWithoutMutation(t *testing.T) {
+	ctx := context.Background()
+	db := testDB(t)
+	server, cookie := authenticatedUserInventoryAPI(t, db)
+	firstUser, err := telegramuser.Resolve(ctx, db, 9201, time.Now().UTC().Add(-2*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondUser, err := telegramuser.Resolve(ctx, db, 9202, time.Now().UTC().Add(-time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	beforeTelegram := countHTTPRows(t, db, "telegram_users")
+	beforeProxy := countHTTPRows(t, db, "proxy_users")
+	beforeReferrals := countHTTPRows(t, db, "referral_attributions")
+	beforeCredits := countHTTPRows(t, db, "credit_buckets")
+
+	firstResponse := performJSON(server.Handler(), http.MethodGet, "/api/users?limit=1", "", cookie, "")
+	if firstResponse.Code != http.StatusOK {
+		t.Fatalf("first users page = %d %s", firstResponse.Code, firstResponse.Body.String())
+	}
+	var firstPage struct {
+		Users        []useradmin.Entry `json:"users"`
+		NextBeforeID *int64            `json:"next_before_id"`
+	}
+	if err := json.Unmarshal(firstResponse.Body.Bytes(), &firstPage); err != nil {
+		t.Fatal(err)
+	}
+	if len(firstPage.Users) != 1 || firstPage.Users[0].TelegramUserID != secondUser.User.ID || firstPage.Users[0].TelegramID != 9202 {
+		t.Fatalf("first users page = %#v", firstPage)
+	}
+	if firstPage.NextBeforeID == nil || *firstPage.NextBeforeID != secondUser.User.ID {
+		t.Fatalf("first next_before_id = %v", firstPage.NextBeforeID)
+	}
+
+	secondResponse := performJSON(server.Handler(), http.MethodGet, "/api/users?limit=1&before_id="+strconv.FormatInt(*firstPage.NextBeforeID, 10), "", cookie, "")
+	if secondResponse.Code != http.StatusOK {
+		t.Fatalf("second users page = %d %s", secondResponse.Code, secondResponse.Body.String())
+	}
+	var secondPage struct {
+		Users        []useradmin.Entry `json:"users"`
+		NextBeforeID *int64            `json:"next_before_id"`
+	}
+	if err := json.Unmarshal(secondResponse.Body.Bytes(), &secondPage); err != nil {
+		t.Fatal(err)
+	}
+	if len(secondPage.Users) != 1 || secondPage.Users[0].TelegramUserID != firstUser.User.ID || secondPage.NextBeforeID != nil {
+		t.Fatalf("second users page = %#v", secondPage)
+	}
+
+	if countHTTPRows(t, db, "telegram_users") != beforeTelegram || countHTTPRows(t, db, "proxy_users") != beforeProxy || countHTTPRows(t, db, "referral_attributions") != beforeReferrals || countHTTPRows(t, db, "credit_buckets") != beforeCredits {
+		t.Fatal("user inventory API mutated authoritative state")
+	}
+}
+
+func TestUserInventoryAPIRejectsInvalidPagination(t *testing.T) {
+	db := testDB(t)
+	server, cookie := authenticatedUserInventoryAPI(t, db)
+	for _, path := range []string{
+		"/api/users?before_id=0",
+		"/api/users?before_id=-1",
+		"/api/users?before_id=nope",
+		"/api/users?before_id=1&before_id=2",
+		"/api/users?limit=0",
+		"/api/users?limit=" + strconv.Itoa(useradmin.MaxListLimit+1),
+		"/api/users?unknown=1",
+	} {
+		response := performJSON(server.Handler(), http.MethodGet, path, "", cookie, "")
+		if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), `"code":"USER_INVENTORY_INVALID"`) {
+			t.Fatalf("invalid users query %q = %d %s", path, response.Code, response.Body.String())
+		}
+	}
+}
+
+func authenticatedUserInventoryAPI(t *testing.T, db *sql.DB) (*Server, []*http.Cookie) {
+	t.Helper()
+	owner, _, err := admin.BootstrapOwner(context.Background(), db, "admin", "generated-admin-password-123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, _, err := admin.CreateSession(context.Background(), db, owner.ID, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := NewWithProxyServicesAndForcedJoin(db, Options{}, nil, nil)
+	return server, []*http.Cookie{{Name: sessionCookieName, Value: token}}
+}
