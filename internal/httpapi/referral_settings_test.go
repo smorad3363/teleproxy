@@ -52,7 +52,7 @@ func TestReferralRewardSettingsAPIGetAndUpdate(t *testing.T) {
 
 	for _, table := range []string{"referral_attributions", "credit_buckets"} {
 		var count int
-		if err := db.QueryRow("SELECT COUNT(*) FROM "+table).Scan(&count); err != nil {
+		if err := db.QueryRow("SELECT COUNT(*) FROM " + table).Scan(&count); err != nil {
 			t.Fatal(err)
 		}
 		if count != 0 {
