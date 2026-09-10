@@ -41,8 +41,8 @@ func TestOpenAppliesSQLiteInvariantsAndMigrations(t *testing.T) {
 	if err := db.QueryRow("SELECT COUNT(*) FROM schema_migrations").Scan(&migrations); err != nil {
 		t.Fatalf("count migrations: %v", err)
 	}
-	if migrations != 10 {
-		t.Fatalf("migration count = %d, want 10", migrations)
+	if migrations != 11 {
+		t.Fatalf("migration count = %d, want 11", migrations)
 	}
 
 	if err := Migrate(ctx, db); err != nil {
@@ -51,8 +51,8 @@ func TestOpenAppliesSQLiteInvariantsAndMigrations(t *testing.T) {
 	if err := db.QueryRow("SELECT COUNT(*) FROM schema_migrations").Scan(&migrations); err != nil {
 		t.Fatalf("count migrations after rerun: %v", err)
 	}
-	if migrations != 10 {
-		t.Fatalf("migration count after rerun = %d, want 10", migrations)
+	if migrations != 11 {
+		t.Fatalf("migration count after rerun = %d, want 11", migrations)
 	}
 }
 
@@ -122,8 +122,8 @@ INSERT INTO credit_buckets(
 	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM schema_migrations").Scan(&migrationCount); err != nil {
 		t.Fatal(err)
 	}
-	if migrationCount != 10 {
-		t.Fatalf("migration count = %d, want 10", migrationCount)
+	if migrationCount != 11 {
+		t.Fatalf("migration count = %d, want 11", migrationCount)
 	}
 	var username string
 	if err := db.QueryRowContext(ctx, "SELECT username FROM proxy_users WHERE id = ?", proxyUserID).Scan(&username); err != nil || username != "legacy" {
@@ -173,6 +173,12 @@ INSERT INTO forced_join_channels(
 INSERT INTO referral_codes(telegram_user_id, code, created_at)
 VALUES (?, 'abcdefghijklmnop', 200)`, telegramUserID); err != nil {
 		t.Fatalf("new referral_codes table is unusable: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `
+INSERT INTO sponsor_profiles(
+    name, channel_ref, ad_tag, enabled, weight, starts_at, ends_at, notes, created_at, updated_at
+) VALUES ('Legacy sponsor', '@legacy_sponsor', '0123456789abcdef0123456789abcdef', 1, 1, NULL, NULL, '', 200, 200)`); err != nil {
+		t.Fatalf("new sponsor_profiles table is unusable: %v", err)
 	}
 }
 
