@@ -41,8 +41,8 @@ func TestOpenAppliesSQLiteInvariantsAndMigrations(t *testing.T) {
 	if err := db.QueryRow("SELECT COUNT(*) FROM schema_migrations").Scan(&migrations); err != nil {
 		t.Fatalf("count migrations: %v", err)
 	}
-	if migrations != 11 {
-		t.Fatalf("migration count = %d, want 11", migrations)
+	if migrations != 12 {
+		t.Fatalf("migration count = %d, want 12", migrations)
 	}
 
 	if err := Migrate(ctx, db); err != nil {
@@ -51,8 +51,8 @@ func TestOpenAppliesSQLiteInvariantsAndMigrations(t *testing.T) {
 	if err := db.QueryRow("SELECT COUNT(*) FROM schema_migrations").Scan(&migrations); err != nil {
 		t.Fatalf("count migrations after rerun: %v", err)
 	}
-	if migrations != 11 {
-		t.Fatalf("migration count after rerun = %d, want 11", migrations)
+	if migrations != 12 {
+		t.Fatalf("migration count after rerun = %d, want 12", migrations)
 	}
 }
 
@@ -122,8 +122,8 @@ INSERT INTO credit_buckets(
 	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM schema_migrations").Scan(&migrationCount); err != nil {
 		t.Fatal(err)
 	}
-	if migrationCount != 11 {
-		t.Fatalf("migration count = %d, want 11", migrationCount)
+	if migrationCount != 12 {
+		t.Fatalf("migration count = %d, want 12", migrationCount)
 	}
 	var username string
 	if err := db.QueryRowContext(ctx, "SELECT username FROM proxy_users WHERE id = ?", proxyUserID).Scan(&username); err != nil || username != "legacy" {
@@ -179,6 +179,12 @@ INSERT INTO sponsor_profiles(
     name, channel_ref, ad_tag, enabled, weight, starts_at, ends_at, notes, created_at, updated_at
 ) VALUES ('Legacy sponsor', '@legacy_sponsor', '0123456789abcdef0123456789abcdef', 1, 1, NULL, NULL, '', 200, 200)`); err != nil {
 		t.Fatalf("new sponsor_profiles table is unusable: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `
+INSERT INTO proxy_nodes(
+    node_type, name, region, host, public_host, mtproto_port, internal_api_endpoint, enabled, created_at, updated_at
+) VALUES ('proxy', 'Legacy node', 'Germany', 'telemt', 'proxy.example.com', 443, 'http://telemt:9091', 1, 200, 200)`); err != nil {
+		t.Fatalf("new proxy_nodes table is unusable: %v", err)
 	}
 }
 
