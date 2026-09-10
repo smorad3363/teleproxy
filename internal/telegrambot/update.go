@@ -8,8 +8,16 @@ import (
 var ErrInvalidStartPayload = errors.New("Telegram /start payload is invalid")
 
 type Update struct {
-	UpdateID int64    `json:"update_id"`
-	Message  *Message `json:"message,omitempty"`
+	UpdateID      int64          `json:"update_id"`
+	Message       *Message       `json:"message,omitempty"`
+	CallbackQuery *CallbackQuery `json:"callback_query,omitempty"`
+}
+
+type CallbackQuery struct {
+	ID      string        `json:"id"`
+	From    *TelegramUser `json:"from,omitempty"`
+	Message *Message      `json:"message,omitempty"`
+	Data    string        `json:"data,omitempty"`
 }
 
 type Message struct {
