@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+INSTALL_DIR=${TPROXY_INSTALL_DIR:-/opt/teleproxy}
+STATE_FILE="$INSTALL_DIR/state/install.env"
+SOURCE_DIR="$INSTALL_DIR/source"
+[[ -f "$STATE_FILE" ]] || { echo "Teleproxy is not installed at $INSTALL_DIR" >&2; exit 1; }
+
+read_state_value() {
+  awk -F= -v k="$2" '$1 == k {sub(/^[^=]*=/, ""); print; found=1; exit} END {exit found ? 0 : 1}' "$1"
+}
+
+compose() {
+  docker compose --project-name teleproxy --env-file "$STATE_FILE" -f "$SOURCE_DIR/compose.yaml" "$@"
+}
+
+panel_port=$(read_state_value "$STATE_FILE" TPROXY_PANEL_PORT)
+panel_bind=$(read_state_value "$STATE_FILE" TPROXY_PANEL_BIND)
+admin_user=$(read_state_value "$STATE_FILE" TPROXY_ADMIN_USER)
+
+case "${1:-status}" in
+  status)
+    compose ps
+    ;;
+  logs)
+    shift || true
+    compose logs --tail=200 "$@"
+    ;;
+  restart)
+    compose restart control
+    ;;
+  start)
+    compose up -d
+    ;;
+  stop)
+    compose stop
+    ;;
+  doctor)
+    docker info >/dev/null
+    if curl -fsS --max-time 3 "http://127.0.0.1:${panel_port}/readyz" >/dev/null; then
+      echo "Control Plane: ready"
+    else
+      echo "Control Plane: not ready" >&2
+      compose ps >&2 || true
+      exit 1
+    fi
+    ;;
+  config)
+    cat "$STATE_FILE"
+    ;;
+  panel)
+    host=127.0.0.1
+    if [[ "$panel_bind" != "127.0.0.1" && "$panel_bind" != "::1" ]]; then
+      detected=$(hostname -I 2>/dev/null | awk '{print $1}' || true)
+      [[ -n "$detected" ]] && host=$detected
+    fi
+    printf 'Panel URL:  http://%s:%s\n' "$host" "$panel_port"
+    printf 'Admin User: %s\n' "$admin_user"
+    ;;
+  *)
+    echo "usage: tproxy {status|logs|restart|start|stop|doctor|config|panel}" >&2
+    exit 2
+    ;;
+esac

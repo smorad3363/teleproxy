@@ -1,0 +1,9 @@
+.git
+.github
+.gitignore
+data
+state
+secrets
+*.db
+*.db-shm
+*.db-wal

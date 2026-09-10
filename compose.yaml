@@ -1,0 +1,25 @@
+services:
+  control:
+    image: ${TPROXY_CONTROL_IMAGE:-teleproxy/control:local}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      TPROXY_HTTP_ADDR: 0.0.0.0:8080
+      TPROXY_DATABASE_PATH: /var/lib/teleproxy/teleproxy.db
+      TPROXY_BOOTSTRAP_ADMIN_USER: ${TPROXY_ADMIN_USER:-admin}
+      TPROXY_BOOTSTRAP_PASSWORD_FILE: /run/teleproxy-secrets/admin-bootstrap-password
+      TPROXY_COOKIE_SECURE: ${TPROXY_COOKIE_SECURE:-false}
+    ports:
+      - "${TPROXY_PANEL_BIND:-0.0.0.0}:${TPROXY_PANEL_PORT:?panel port required}:8080"
+    volumes:
+      - "${TPROXY_DATA_DIR:?data dir required}:/var/lib/teleproxy"
+      - "${TPROXY_SECRETS_DIR:?secrets dir required}:/run/teleproxy-secrets:ro"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m

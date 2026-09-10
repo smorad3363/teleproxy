@@ -31,3 +31,23 @@ jobs:
 
       - name: Test
         run: go test ./...
+
+  installer:
+    needs: go
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Installer syntax and unit tests
+        run: |
+          bash -n install.sh scripts/install_lib.sh scripts/install-host.sh bin/tproxy tests/installer_lib_test.sh tests/installer_e2e.sh
+          bash tests/installer_lib_test.sh
+
+      - name: Docker prerequisites
+        run: |
+          docker version
+          docker compose version
+
+      - name: End-to-end install and rerun
+        run: bash tests/installer_e2e.sh
