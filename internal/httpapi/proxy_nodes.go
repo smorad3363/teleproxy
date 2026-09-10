@@ -25,6 +25,7 @@ type proxyNodePayload struct {
 }
 
 func (s *Server) registerProxyNodeRoutes() {
+	s.mux.HandleFunc("GET /nodes", s.handleProxyNodePage)
 	s.mux.HandleFunc("GET /api/nodes", s.handleProxyNodeList)
 	s.mux.HandleFunc("POST /api/nodes", s.handleProxyNodeCreate)
 	s.mux.HandleFunc("PUT /api/nodes/{id}", s.handleProxyNodeUpdate)
