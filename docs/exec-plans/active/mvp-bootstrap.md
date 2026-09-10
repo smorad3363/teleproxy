@@ -3,207 +3,144 @@
 Status: ACTIVE
 Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
-Latest verified checkpoint: `281f91afca202d0cc9a61e64fe88fe7ebbea5aab`
+Latest verified checkpoint: `24cec6f875fb5f56bfb97d8159d8fa2ac3b8e533`
 
 ## Purpose
 
-Build the first recoverable foundation of Teleproxy from an empty repository, following the supplied engineering contract and project roadmap.
+Build Teleproxy incrementally from an empty repository while keeping every milestone secure, independently verifiable, and recoverable from Git + this file without relying on chat history.
 
 ## Non-negotiable requirements
 
-- Control Plane and Proxy Data Plane remain lifecycle-independent.
-- Go + lightweight HTTP + embedded UI + SQLite for the Control Plane.
-- `telemt` is an external data-plane component; do not copy its source into this project.
-- Installation is Docker-first and safe to rerun.
-- First installation selects a random available high port for the Web Panel, persists it, and does not silently change it on rerun.
-- Installer final output shows Panel URL, Panel port, admin username, generated initial credential when needed, component health, version/ref, data/config paths, and `tproxy` command.
-- Telemt management API must not be published publicly; keep it on a private project network and authenticate requests.
-- Never mount `/var/run/docker.sock` into the Web App.
-- No plaintext passwords, bot tokens, session secrets, MTProto secrets, API bearer values, or private keys in logs/state.
-- Substantial work must be recoverable from this file plus Git state without relying on chat history.
+- Control Plane and Proxy Data Plane have independent lifecycles.
+- Go + lightweight HTTP + SQLite for Control Plane; Telemt remains an external data-plane component.
+- Docker-first installer is rerun-safe, chooses/persists a random free high Panel port, and shows first-install Panel credentials/settings only after health verification.
+- Telemt API is authenticated and never host-published; no Docker socket in Web App.
+- No plaintext passwords, session/API/MTProto secrets, bot tokens, or private keys in logs/state.
+- Proxy-user secrets are reveal-once and are never stored by Control Plane.
+- Desired state is persisted before data-plane reconciliation so Telemt outages cannot lose admin intent.
+- Roadmap quota business model uses Credit Buckets with independent expiry; do not collapse it into a single business `traffic_limit` field. Telemt quota/expiry values are enforcement projections, not the reward ledger source of truth.
 
 ## Recovery protocol
 
-When resuming after interruption:
-
-1. Read `AGENTS.md` when present, `docs/ARCHITECTURE.md`, the relevant subsystem document, and this execution plan.
-2. Inspect branch head and compare it with `Latest verified checkpoint` and any active stage candidate.
-3. Inspect every file changed after the verified checkpoint.
-4. Re-run or inspect targeted validation for the partially completed milestone.
-5. If the last write was partial, failed CI, or inconsistent, repair that milestone before starting a new one.
-6. Do not restart from scratch and do not overwrite unrelated changes.
+On interruption:
+1. Read this plan and relevant architecture/security/reliability docs.
+2. Compare branch head with `Latest verified checkpoint`.
+3. Inspect every file/commit after that checkpoint.
+4. Re-run/inspect validation for the active partial milestone.
+5. Repair the partial milestone before starting another one.
+6. Never reset/clean/overwrite unrelated work; no force update unless explicitly authorized.
 
 ## Stage policy
 
-Each stage is intentionally small and independently verifiable. Do not broaden a stage while implementing it.
+Keep milestones small, buildable, and independently verifiable. Promote a checkpoint only after targeted tests and required regression CI pass.
+
+## Completed stages
 
 ### Stage 1 — Repository foundation — PARTIAL
+Completed execution plan, architecture/security/reliability docs, isolated branch and CI. Remaining exact-byte mirror of supplied root `AGENTS.md`, `ROADMAP_FA.md`, `ROADMAP_EN.md`; do not commit partial mirrors.
 
-Completed:
-- active repository-local recovery plan
-- architecture/security/reliability documents
-- isolated task branch
-- CI with Go and installer E2E
-- exact source files re-materialized locally and SHA-256 re-verified
+Verified source SHA-256:
+- AGENTS: `4a0c4156f14c3a40fbf2c6da8937f36c9f7f15f694bc3895181b13ccc0984483`
+- ROADMAP_EN: `90605c0e08bd960b02d4569e49995ddc2ece1fb37ca6a09d37c66350114009`
+- ROADMAP_FA: `a9219b597eac4a2d9c73f5ae1013b25a3e15a862266665fcf5de3e2aae174fab`
 
-Remaining:
-- commit the supplied canonical `AGENTS.md`, `ROADMAP_FA.md`, and `ROADMAP_EN.md` at repository root
-
-Verified source hashes:
-- `AGENTS.md`: `4a0c4156f14c3a40fbf2c6da8937f36c9f7f15f694bc3895181b13ccc0984483`
-- `ROADMAP_EN.md`: `90605c0e08bd960b02d4569e49995dd55c2ece1fb37ca6a09d37c66350114009`
-- `ROADMAP_FA.md`: `a9219b597eac4a2d9c73f5ae1013b25a3e15a862266665fcf5de3e2aae174fab`
-
-Current GitHub connector does not accept a local file argument for blob writes and large base64 output is truncated by the tool response. Do not create partial mirrors; the conversation source files remain authoritative until an exact-byte upload path is available.
+Note: the ROADMAP_EN hash above was previously recorded as `90605c0e08bd960b02d4569e49995dd55c2ece1fb37ca6a09d37c66350114009`; preserve that previous value as authoritative until exact source re-hash is repeated before mirror. Do not guess/fix the discrepancy silently.
 
 ### Stage 2 — Minimal Control Plane — COMPLETE
+Commit path through CP-002. Health/readiness, HTTP timeouts, graceful shutdown, Problem Details, CI. CI `34419759826` PASS.
 
-Implemented validated HTTP config, graceful HTTP server, `/healthz`, `/readyz`, Problem Details and tests.
-CI `34419759826` PASS.
+### Stage 3 — Persistence/admin bootstrap — COMPLETE
+Verified `5798075de40d2f966d8546a18e6fa450d7142f90`; CI `34420104043` PASS. SQLite WAL/foreign keys/busy timeout, migrations, PBKDF2-SHA256 admin password hashes, hashed session tokens.
 
-### Stage 3 — Core persistence + admin bootstrap — COMPLETE
+### Stage 4 — Secure Web login — COMPLETE
+Verified `2e83b4770dd8e26fc5c0ebcca8dee6aa51111254`; CI `34420655852` PASS. Protected first-admin bootstrap, DB sessions, CSRF, secure cookie flags, login rate limiting.
 
-Verified commit: `5798075de40d2f966d8546a18e6fa450d7142f90`
-CI `34420104043` PASS.
-
-Implemented SQLite WAL/foreign keys/busy timeout/NORMAL sync, migrations, owner bootstrap, PBKDF2-SHA256 password hashing and hashed session-token persistence.
-
-### Stage 4 — Minimal Web login — COMPLETE
-
-Verified commit: `2e83b4770dd8e26fc5c0ebcca8dee6aa51111254`
-CI `34420655852` PASS.
-
-Implemented protected one-time owner bootstrap, DB-backed sessions, login/dashboard, secure cookie flags, CSRF, generic credential failures, login rate limiting and DB readiness.
-
-### Stage 5 — Installer foundation — COMPLETE
-
-Verified commit: `457f52783f9b2962c55be00beb801f0f2534958c`
-CI `34427021157` PASS.
-
-Implemented hardened Docker Control Plane, installer lock/state, random persistent Panel port, one-time admin password, safe rerun, final install summary, `tproxy`, and Docker E2E.
+### Stage 5 — Recoverable Docker installer — COMPLETE
+Verified `457f52783f9b2962c55be00beb801f0f2534958c`; CI `34427021157` PASS. Random persistent Panel port, exclusive install lock/state, one-time admin password, `tproxy`, real Docker install/readiness/rerun E2E.
 
 ### Stage 6A — Pinned Telemt data plane — COMPLETE
+Verified `47a95349922ba5be37cf0ed8416b482de08580ef`; CI `34438212903` PASS. Telemt 3.5.7 pinned/checksummed, non-root container, public MTProto port, no host API 9091, protected Bearer token/config, disabled internal bootstrap user, E2E isolation/rerun.
 
-Verified commit: `47a95349922ba5be37cf0ed8416b482de08580ef`
-CI `34438212903` PASS.
+Pinned Telemt 3.5.7 artifacts:
+- amd64 musl SHA-256 `db26e363bb98f11a02a7fd6d0df455f4987af5cdb2a5897da7f6fb8d613fbf41`
+- arm64 musl SHA-256 `8730080863f8f8ed52ee11f9c51c4daa30b3044fc842538bf6dd8c91ac0572c1`
 
-Implemented Telemt `3.5.7` checksum-pinned non-root container, configurable public MTProto port, internal authenticated API with no host publication, protected generated config/token, disabled bootstrap user, proxy state/management, and E2E isolation/rerun checks.
+### Stage 6B — Telemt health client — COMPLETE
+Verified `c67874de95b2ca4ff1786ffbd349fb091f270647`; CI `34438961960` PASS. Protected token-file loading, bounded HTTP client, safe health classifications, `/api/system/proxy`; Control Plane readiness remains independent from Telemt.
 
-### Stage 6B — Control Plane Telemt client adapter — COMPLETE
+### Stage 6C1 — Proxy-user persistence + Telemt lifecycle client — COMPLETE
+Verified `281f91afca202d0cc9a61e64fe88fe7ebbea5aab`; CI `34445848656` PASS. `proxy_users` desired/sync state, no secret column, typed Telemt create/list/enable/disable/rotate calls, safe bounded upstream error classification.
 
-Verified commit: `c67874de95b2ca4ff1786ffbd349fb091f270647`
-CI `34438961960` PASS.
-
-Implemented protected token-file client construction, bounded HTTP handling, typed safe health states, config validation, authenticated `/api/system/proxy`, and Control Plane readiness independence from Telemt health.
-
-### Stage 6C1 — Proxy user persistence + Telemt lifecycle client — COMPLETE
-
-Verified commit: `281f91afca202d0cc9a61e64fe88fe7ebbea5aab`
-CI `34445848656` PASS.
+### Stage 6C2 — Authenticated proxy-user API + reconciliation — COMPLETE
+Verified `24cec6f875fb5f56bfb97d8159d8fa2ac3b8e533`; CI `34446509254` PASS.
 
 Implemented:
-- migration `002_proxy_users.sql` with desired enabled state and reconciliation state
-- Control Plane proxy-user store separate from administrator identities
-- no secret-bearing column in `proxy_users`
-- pending/synced/error state transitions with bounded machine-only error codes
-- typed Telemt create/list/enable/disable/rotate-secret client calls matching Telemt 3.5.7 API
-- bounded response bodies and safe HTTP failure classification without upstream body leakage
-- reveal-once returned MTProto secret validation; plaintext secrets are not persisted
-- store/migration/client tests and existing installer/Telemt E2E regression checks
+- authenticated `GET /api/proxy/users`
+- CSRF-protected create/enable/disable/rotate endpoints
+- DB-first desired state and Telemt reconciliation
+- safe `TELEMT_*` sync error codes only; no upstream body leakage
+- create/rotate reveal secret only in that successful response with `Cache-Control: no-store`
+- DB-first list excludes Telemt internal bootstrap user by construction and never exposes secret material
+- Telemt unavailable create/enable/disable preserves desired state and returns safe 503/502/409 semantics as applicable
+- integration tests for auth, CSRF, reveal-once behavior and failure reconciliation
 
-### Stage 6C2 — Admin proxy-user API + reconciliation — ACTIVE
+## Active stage
 
-Scope:
-- authenticated JSON endpoints for Control Plane proxy-user create/list/enable/disable/rotate
-- create writes desired DB record first, then provisions Telemt
-- enable/disable writes desired state first, then reconciles Telemt
-- Telemt failures mark only a bounded safe machine code in DB; desired state remains recoverable
-- rotate is allowed only for an existing Control Plane user and returns the new secret once
-- list is DB-first and never exposes secret material or the Telemt bootstrap user
-- mutating JSON endpoints require session-bound CSRF protection
+### Stage 6D1 — Telemt quota/expiry enforcement contract — ACTIVE
+
+Scope only:
+- verify Telemt 3.5.7 PATCH semantics and quota/expiry validation from pinned upstream source
+- extend typed Telemt client with quota/expiry policy patch and quota-reset/status primitives needed by reconciliation
+- model set/remove semantics explicitly; do not invent a single Control Plane reward-limit field
+- validate RFC3339 expiry and integer bounds at the boundary
+- do not change DB business schema in this milestone
 
 Acceptance:
-- unauthenticated lifecycle requests return 401
-- missing/invalid CSRF on mutations returns 403
-- successful create returns one secret plus a synced DB user
-- Telemt-unavailable create leaves a pending/error desired DB record without a secret and returns safe 503 metadata
-- list contains no secret field/material
-- enable/disable preserve desired DB state if Telemt is unavailable and mark safe sync error
-- rotate never stores returned secret
-- Go format/vet/test and existing Docker/Telemt E2E remain green
+- client emits exact Telemt 3.5.7 JSON Merge Patch semantics for quota/expiry
+- clear/remove differs from unchanged
+- malformed expiry/quota input is rejected before network call
+- response/error bodies remain bounded and secrets/upstream messages are not surfaced
+- Go format/vet/test + existing Docker/Telemt E2E remain green
 
-### Stage 6D — Quota/expiry reconciliation — PENDING
-
-After lifecycle endpoints are verified, add expiry/quota policy and reconciliation separately before broader referral/bot features.
+### Stage 6D2 — Credit Bucket ledger + enforcement projection — PENDING
+Use roadmap Credit Buckets: original bytes, consumed bytes, start, expiry, reward type, source, status; consume earliest expiry first. Add projection/reconciliation to Telemt separately after schema/ledger tests.
 
 ## Checkpoints
 
-### CP-000 — repository initialized
-- Commit: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
+- CP-000 repo initialized: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
+- CP-001 minimal Control Plane local: `b98507bbb3ef0a74e6e147286c22ab7d626f9e72`
+- CP-002 CI foundation: `084d4a1256a6b28412d9457f6568a4138e09c83c`, CI `34419759826`
+- CP-003 persistence/admin: `5798075de40d2f966d8546a18e6fa450d7142f90`, CI `34420104043`
+- CP-004 Web auth: `2e83b4770dd8e26fc5c0ebcca8dee6aa51111254`, CI `34420655852`
+- CP-005 Docker installer: `457f52783f9b2962c55be00beb801f0f2534958c`, CI `34427021157`
+- CP-006 Telemt data plane: `47a95349922ba5be37cf0ed8416b482de08580ef`, CI `34438212903`
+- CP-007 Telemt health client: `c67874de95b2ca4ff1786ffbd349fb091f270647`, CI `34438961960`
+- CP-008 proxy lifecycle core: `281f91afca202d0cc9a61e64fe88fe7ebbea5aab`, CI `34445848656`
+- CP-009 authenticated lifecycle API: `24cec6f875fb5f56bfb97d8159d8fa2ac3b8e533`, CI `34446509254`
 
-### CP-001 — minimal Control Plane verified locally
-- Commit: `b98507bbb3ef0a74e6e147286c22ab7d626f9e72`
+Recovery point: CP-009. If interrupted during 6D1, inspect all commits/files after CP-009 and finish/repair 6D1 before any Credit Bucket schema, bot, referral, or UI work.
 
-### CP-002 — CI foundation verified
-- Commit: `084d4a1256a6b28412d9457f6568a4138e09c83c`
-- CI: `34419759826` PASS
+## Important decisions/discoveries
 
-### CP-003 — persistence/admin bootstrap verified
-- Commit: `5798075de40d2f966d8546a18e6fa450d7142f90`
-- CI: `34420104043` PASS
+- Telemt source is not copied; integration is via its authenticated API and pinned release artifacts.
+- Telemt 3.5.7 rejects empty `[access.users]`; an internal disabled bootstrap user satisfies that invariant until real users exist.
+- Project Docker bridge cannot be `internal:true` because Telemt requires outbound Telegram connectivity; API isolation is achieved by no host publication + Bearer auth.
+- SQLite stays single-connection in MVP so connection-scoped PRAGMAs remain reliable.
+- Random Panel port is convenience/conflict avoidance, not a security boundary; production TLS hardening remains required.
+- Roadmap explicitly requires Credit Buckets and earliest-expiry-first consumption; temporary referral rewards must remain independent from other quota.
 
-### CP-004 — secure admin web login verified
-- Commit: `2e83b4770dd8e26fc5c0ebcca8dee6aa51111254`
-- CI: `34420655852` PASS
+## Validation/failure log
 
-### CP-005 — Docker installer and rerun verified
-- Commit: `457f52783f9b2962c55be00beb801f0f2534958c`
-- CI: `34427021157` PASS
-
-### CP-006 — pinned Telemt data plane verified
-- Commit: `47a95349922ba5be37cf0ed8416b482de08580ef`
-- CI: `34438212903` PASS
-
-### CP-007 — authenticated Telemt health adapter verified
-- Commit: `c67874de95b2ca4ff1786ffbd349fb091f270647`
-- CI: `34438961960` PASS
-
-### CP-008 — proxy-user persistence and lifecycle client verified
-- Commit: `281f91afca202d0cc9a61e64fe88fe7ebbea5aab`
-- CI: `34445848656` PASS
-- Recovery point: inspect every commit/file after CP-008. If Stage 6C2 has started, repair/finish the admin lifecycle API before quota, referral, bot, or UI expansion.
-
-## Decisions / discoveries
-
-- Repository was empty at task start.
-- Telemt remains an external dependency integrated via authenticated Control API; its source is not copied into Teleproxy.
-- Pin Telemt versions/checksums; never follow unbounded `latest` for production install.
-- Telemt 3.5.7 rejects empty `[access.users]`; generated disabled bootstrap user remains internal until real lifecycle users exist.
-- Telemt API must not be host-published.
-- Telemt outage must not take down Control Plane readiness.
-- SQLite remains single-connection in MVP so connection-scoped PRAGMAs cannot silently disappear.
-- Initial admin password uses a protected bootstrap file and is displayed only once after verified install.
-- Random Panel port is not a security boundary; TLS hardening remains required for production public exposure.
-- Proxy user secrets are reveal-once credentials; desired metadata belongs in SQLite, plaintext secrets do not.
-- Reconciliation is desired-state-first: a data-plane outage may delay convergence but must not lose the administrator's intended state.
-
-## Validation / failure log
-
-- 2026-09-10: Stage 2 CI `34419759826` PASS.
-- 2026-09-10: Stage 3 CI `34420104043` PASS.
-- 2026-09-10: Stage 4 CI `34420655852` PASS; CP-004.
-- 2026-09-10: Stage 5 `c1cde407...`, CI `34426475546` failed because bootstrap secret was `0640`; strict validation retained, ownership/mode fixed.
-- 2026-09-10: Stage 5 `34b455b0...`, CI `34426870772` failed because E2E omitted temporary `TPROXY_INSTALL_DIR`; production unchanged.
-- 2026-09-10: Stage 5 `457f5278...`, CI `34427021157` PASS; CP-005.
-- 2026-09-10: Stage 6A `39349dcf...`, CI `34437891406` failed on an unreliable no-binding test; replaced with direct Docker PortBindings inspection.
-- 2026-09-10: Stage 6A `91722c95...`, CI `34438040249` failed because shell redirection read a protected token before sudo; token remained `0600`, harness changed to `sudo cat`.
-- 2026-09-10: Stage 6A `47a95349...`, CI `34438212903` PASS; CP-006.
-- 2026-09-10: canonical source hashes were re-verified; exact repository mirror remains blocked by connector large-file transport and no partial mirrors were committed.
-- 2026-09-10: Stage 6B `0fbb8d72...`, CI `34438839369` failed only at format check.
-- 2026-09-10: gofmt-only repair `c67874de...`, CI `34438961960` PASS; CP-007.
-- 2026-09-10: Stage 6C1 Telemt client isolated tests PASS locally; repository Go minimum remains validated in CI Go 1.27.1.
-- 2026-09-10: Stage 6C1 `281f91af...`, CI `34445848656` PASS for format/vet/test plus installer/Telemt E2E; CP-008.
+- Stage 5 `c1cde407...`, CI `34426475546`: bootstrap secret mode 0640 rejected; strict backend validation retained, fixed to UID 10001 + 0600.
+- Stage 5 `34b455b0...`, CI `34426870772`: E2E omitted temporary install path; test harness fixed only.
+- Stage 5 `457f5278...`, CI `34427021157`: PASS; CP-005.
+- Stage 6A `39349dcf...`, CI `34437891406`: unreliable no-port-binding assertion; replaced with Docker HostConfig inspection.
+- Stage 6A `91722c95...`, CI `34438040249`: protected token read before sudo; token stayed 0600, harness changed to `sudo cat`.
+- Stage 6A `47a95349...`, CI `34438212903`: PASS; CP-006.
+- Stage 6B `0fbb8d72...`, CI `34438839369`: format-only failure; gofmt repair `c67874de...` then CI `34438961960` PASS; CP-007.
+- Stage 6C1 `281f91af...`, CI `34445848656`: PASS; CP-008.
+- Stage 6C2 `24cec6f8...`, CI `34446509254`: PASS for format/vet/test and installer/Telemt E2E; CP-009.
 
 ## Current next action
 
-Implement Stage 6C2 from CP-008 as a coherent authenticated API/reconciliation slice. If interrupted, inspect all commits/files after CP-008 and repair 6C2 before starting quota/expiry work.
+Implement Stage 6D1 from CP-009. First verify pinned Telemt quota/expiry patch semantics and validation, then add only the client contract/tests. Promote only after Go and existing Docker/Telemt E2E are green.
