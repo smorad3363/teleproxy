@@ -41,8 +41,8 @@ func TestOpenAppliesSQLiteInvariantsAndMigrations(t *testing.T) {
 	if err := db.QueryRow("SELECT COUNT(*) FROM schema_migrations").Scan(&migrations); err != nil {
 		t.Fatalf("count migrations: %v", err)
 	}
-	if migrations != 9 {
-		t.Fatalf("migration count = %d, want 9", migrations)
+	if migrations != 10 {
+		t.Fatalf("migration count = %d, want 10", migrations)
 	}
 
 	if err := Migrate(ctx, db); err != nil {
@@ -51,8 +51,8 @@ func TestOpenAppliesSQLiteInvariantsAndMigrations(t *testing.T) {
 	if err := db.QueryRow("SELECT COUNT(*) FROM schema_migrations").Scan(&migrations); err != nil {
 		t.Fatalf("count migrations after rerun: %v", err)
 	}
-	if migrations != 9 {
-		t.Fatalf("migration count after rerun = %d, want 9", migrations)
+	if migrations != 10 {
+		t.Fatalf("migration count after rerun = %d, want 10", migrations)
 	}
 }
 
@@ -122,8 +122,8 @@ INSERT INTO credit_buckets(
 	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM schema_migrations").Scan(&migrationCount); err != nil {
 		t.Fatal(err)
 	}
-	if migrationCount != 9 {
-		t.Fatalf("migration count = %d, want 9", migrationCount)
+	if migrationCount != 10 {
+		t.Fatalf("migration count = %d, want 10", migrationCount)
 	}
 	var username string
 	if err := db.QueryRowContext(ctx, "SELECT username FROM proxy_users WHERE id = ?", proxyUserID).Scan(&username); err != nil || username != "legacy" {

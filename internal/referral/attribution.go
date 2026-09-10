@@ -80,7 +80,7 @@ func GetAttribution(ctx context.Context, db *sql.DB, inviteeUserID int64) (Attri
 		return Attribution{}, fmt.Errorf("invitee Telegram user ID must be greater than zero")
 	}
 	row := db.QueryRowContext(ctx, `
-SELECT id, inviter_user_id, invitee_user_id, status, rejection_reason, finalized_at, created_at, updated_at
+SELECT id, inviter_user_id, invitee_user_id, status, rejection_reason, eligible_at, finalized_at, created_at, updated_at
 FROM referral_attributions
 WHERE invitee_user_id = ?`, inviteeUserID)
 	return scanAttribution(row)
@@ -105,7 +105,7 @@ WHERE inviter_user_id = ? AND status = 'rewarded'`, inviterUserID).Scan(&count);
 
 func getAttributionByID(ctx context.Context, db *sql.DB, id int64) (Attribution, error) {
 	row := db.QueryRowContext(ctx, `
-SELECT id, inviter_user_id, invitee_user_id, status, rejection_reason, finalized_at, created_at, updated_at
+SELECT id, inviter_user_id, invitee_user_id, status, rejection_reason, eligible_at, finalized_at, created_at, updated_at
 FROM referral_attributions
 WHERE id = ?`, id)
 	return scanAttribution(row)
@@ -119,7 +119,7 @@ func scanAttribution(row scanner) (Attribution, error) {
 	var attribution Attribution
 	var status string
 	var rejectionReason sql.NullString
-	var finalizedAt sql.NullInt64
+	var eligibleAt, finalizedAt sql.NullInt64
 	var createdAt, updatedAt int64
 	if err := row.Scan(
 		&attribution.ID,
@@ -127,6 +127,7 @@ func scanAttribution(row scanner) (Attribution, error) {
 		&attribution.InviteeUserID,
 		&status,
 		&rejectionReason,
+		&eligibleAt,
 		&finalizedAt,
 		&createdAt,
 		&updatedAt,
@@ -142,6 +143,10 @@ func scanAttribution(row scanner) (Attribution, error) {
 	if rejectionReason.Valid {
 		reason := rejectionReason.String
 		attribution.RejectionReason = &reason
+	}
+	if eligibleAt.Valid {
+		value := time.Unix(eligibleAt.Int64, 0).UTC()
+		attribution.EligibleAt = &value
 	}
 	if finalizedAt.Valid {
 		value := time.Unix(finalizedAt.Int64, 0).UTC()

@@ -35,6 +35,27 @@ const (
 	OutcomeSelfReferral  AttributionOutcome = "self_referral"
 )
 
+type EligibilityOutcome string
+
+const (
+	EligibilityApproved        EligibilityOutcome = "approved"
+	EligibilityRejected        EligibilityOutcome = "rejected"
+	EligibilityAlreadyApproved EligibilityOutcome = "already_approved"
+	EligibilityAlreadyRejected EligibilityOutcome = "already_rejected"
+	EligibilityAlreadyRewarded EligibilityOutcome = "already_rewarded"
+)
+
+type RejectionReason string
+
+const (
+	RejectionAntiAbuse  RejectionReason = "anti_abuse"
+	RejectionDailyCap   RejectionReason = "daily_cap"
+	RejectionWeeklyCap  RejectionReason = "weekly_cap"
+	RejectionCooldown   RejectionReason = "cooldown"
+	RejectionBlacklist  RejectionReason = "blacklist"
+	RejectionSuspicious RejectionReason = "suspicious"
+)
+
 type Code struct {
 	TelegramUserID int64     `json:"telegram_user_id"`
 	Value          string    `json:"code"`
@@ -47,6 +68,7 @@ type Attribution struct {
 	InviteeUserID   int64      `json:"invitee_user_id"`
 	Status          Status     `json:"status"`
 	RejectionReason *string    `json:"rejection_reason,omitempty"`
+	EligibleAt      *time.Time `json:"eligible_at,omitempty"`
 	FinalizedAt     *time.Time `json:"finalized_at,omitempty"`
 	CreatedAt       time.Time  `json:"created_at"`
 	UpdatedAt       time.Time  `json:"updated_at"`
@@ -55,4 +77,9 @@ type Attribution struct {
 type AttributionResult struct {
 	Outcome     AttributionOutcome `json:"outcome"`
 	Attribution *Attribution       `json:"attribution,omitempty"`
+}
+
+type EligibilityResult struct {
+	Outcome     EligibilityOutcome `json:"outcome"`
+	Attribution Attribution        `json:"attribution"`
 }
