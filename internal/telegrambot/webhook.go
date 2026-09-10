@@ -247,14 +247,23 @@ func formatStartResponse(response StartResponse) string {
 	if response.Created {
 		accountState = "created"
 	}
+	var text string
 	if response.ProxyLink == "" {
-		return fmt.Sprintf("Teleproxy account %s.\nUser: %s\nRemaining credit: %d bytes\nProxy link provisioning is pending.", accountState, response.ProxyUsername, response.RemainingBytes)
+		text = fmt.Sprintf("Teleproxy account %s.\nUser: %s\nRemaining credit: %d bytes\nProxy link provisioning is pending.", accountState, response.ProxyUsername, response.RemainingBytes)
+	} else {
+		proxyState := "synchronizing"
+		if response.ProxySyncState == "synced" {
+			proxyState = "ready"
+		}
+		text = fmt.Sprintf("Teleproxy account %s.\nUser: %s\nRemaining credit: %d bytes\nProxy status: %s.\nProxy link:\n%s", accountState, response.ProxyUsername, response.RemainingBytes, proxyState, response.ProxyLink)
 	}
-	proxyState := "synchronizing"
-	if response.ProxySyncState == "synced" {
-		proxyState = "ready"
+	if response.ReferralCode == "" {
+		return text
 	}
-	return fmt.Sprintf("Teleproxy account %s.\nUser: %s\nRemaining credit: %d bytes\nProxy status: %s.\nProxy link:\n%s", accountState, response.ProxyUsername, response.RemainingBytes, proxyState, response.ProxyLink)
+	if response.ReferralLink != "" {
+		return fmt.Sprintf("%s\nReferral link:\n%s\nSuccessful referrals: %d", text, response.ReferralLink, response.ReferralCount)
+	}
+	return fmt.Sprintf("%s\nReferral code: %s\nSuccessful referrals: %d", text, response.ReferralCode, response.ReferralCount)
 }
 
 func formatMissingChannels(channels []StartRequiredChannel) string {
