@@ -3,7 +3,7 @@
 Status: ACTIVE
 Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
-Latest verified checkpoint: `2cc686fa1da66b8cf3b37c1a6565d0bbb94520bf`
+Latest verified checkpoint: `cdde3bfb7a953d3be619e7d82204790dd2b6182e`
 
 ## Purpose
 
@@ -18,17 +18,11 @@ Build Teleproxy incrementally from an empty repository while keeping every miles
 - No plaintext passwords, session/API/MTProto secrets, bot tokens, or private keys in logs/state.
 - Proxy-user secrets are reveal-once and are never stored by Control Plane.
 - Desired state is persisted before data-plane reconciliation so Telemt outages cannot lose admin intent.
-- Credit Buckets with independent expiry are the quota business source of truth; Telemt quota/expiry is only an enforcement projection.
+- Credit Buckets with independent expiry are authoritative business state; Telemt quota/expiry is only an enforcement projection.
 
 ## Recovery protocol
 
-On interruption:
-1. Read this plan and relevant architecture/security/reliability docs.
-2. Compare branch head with `Latest verified checkpoint`.
-3. Inspect every file/commit after that checkpoint.
-4. Re-run/inspect validation for the active partial milestone.
-5. Repair that milestone before starting another one.
-6. Never reset/clean/overwrite unrelated work; no force update unless explicitly authorized.
+On interruption: read this plan; compare branch head with `Latest verified checkpoint`; inspect every later commit/file and its CI; repair the active partial milestone before starting another one; never reset/clean/force over unrelated work.
 
 ## Stage policy
 
@@ -36,7 +30,7 @@ Keep milestones small, buildable, independently understandable, and independentl
 
 ## Completed stages
 
-- Stage 1 — Repository foundation — PARTIAL. Execution plan, architecture/security/reliability docs, isolated branch and CI exist. Remaining exact-byte mirror of supplied root `AGENTS.md`, `ROADMAP_FA.md`, `ROADMAP_EN.md`; never commit partial mirrors.
+- Stage 1 — Repository foundation — PARTIAL. Execution plan, architecture/security/reliability docs, isolated branch and CI exist. Remaining exact-byte root mirrors of supplied `AGENTS.md`, `ROADMAP_FA.md`, `ROADMAP_EN.md`; never commit partial mirrors.
 - Stage 2 — Minimal Control Plane — COMPLETE. CI `34419759826` PASS.
 - Stage 3 — Persistence/admin bootstrap — COMPLETE. `5798075de40d2f966d8546a18e6fa450d7142f90`; CI `34420104043` PASS.
 - Stage 4 — Secure Web login — COMPLETE. `2e83b4770dd8e26fc5c0ebcca8dee6aa51111254`; CI `34420655852` PASS.
@@ -49,19 +43,19 @@ Keep milestones small, buildable, independently understandable, and independentl
 - Stage 6D2A — Credit Bucket transactional ledger — COMPLETE. `50baa6572c01bf320ac475339cc82a6710438de8`; CI `34448520864` PASS.
 - Stage 6D2B1 — Telemt quota usage read + pure projection — COMPLETE. `1013aca4ea01456de043b3e98a74be4686532632`; CI `34449339437` PASS.
 - Stage 6D2B2A — Durable reconciliation journal + projection snapshot — COMPLETE. `2cc686fa1da66b8cf3b37c1a6565d0bbb94520bf`; CI `34452322294` PASS.
+- Stage 6D2B2B — Atomic usage accounting — COMPLETE. `cdde3bfb7a953d3be619e7d82204790dd2b6182e`; CI `34453311029` PASS.
 
-### Stage 6D2B2A implemented
+### Stage 6D2B2B implemented
 
-- additive `004_quota_reconciliation.sql`
-- per-user generation/phase, Telemt reset epoch and used baseline, projection timestamp/quota, enforced expiry and next-start boundary
-- exact ordered member snapshot with bucket ID and allowance
-- `PrepareProjection` persists `phase=applying`; preparation is not falsely treated as successful Telemt application
-- generation compare-and-swap prevents stale replacement
-- projection/member replacement is one SQLite transaction and rolls back completely on member failure
-- member uniqueness/order and same-user bucket ownership enforced by schema
-- unsigned Telemt values outside SQLite signed range rejected
-- projection preparation does not mutate Credit Bucket consumption
-- proxy-user cascade remains valid through deferred composite bucket FK
+- additive `005_quota_accounting.sql` adds persisted `accounted_bytes` to each projection member
+- observations are accepted as Telemt reset epoch + absolute used bytes and checked against SQLite signed limits
+- accounting requires a valid persisted projection, matching reset epoch, and non-regressing usage
+- usage delta is charged in the exact snapshotted member order and never beyond member allowance/bucket original bytes
+- current bucket consumption must equal `consumed_at_projection + accounted_by_snapshot`; unexpected consumption is projection drift, not silently reassigned traffic
+- expired or revoked buckets remain chargeable for traffic historically authorized by the saved projection
+- bucket consumed bytes, member accounted bytes, and Telemt used baseline advance in one SQLite transaction
+- repeated identical observation is idempotent; even zero-delta calls validate projection drift
+- insufficient allowance, stale state, trigger failure, reset mismatch, and usage regression roll back without partial accounting
 
 ## Supplied source hashes
 
@@ -78,40 +72,41 @@ Telemt 3.5.7:
 
 ## Active stage
 
-### Stage 6D2B2B — Atomic usage accounting against projection members — ACTIVE
+### Stage 6D2B2C1 — Durable fail-closed phase transitions — ACTIVE
 
-Purpose: account observed Telemt quota usage exactly once against the exact buckets authorized by the active projection, even if wall clock expiry or administrative revocation happened after projection.
+Purpose: establish the restartable local state machine before any cross-system mutation orchestration.
 
 Scope only:
-- add backward-compatible persisted per-member accounted bytes
-- add a transaction that accepts one Telemt observation: reset epoch + used bytes
-- require an active projection and matching Telemt reset epoch
-- calculate delta from the persisted Telemt used baseline
-- charge delta in saved projection-member order, bounded by each saved allowance
-- detect member/bucket drift rather than silently double-charge or reassign historical traffic
-- atomically update Credit Bucket consumed bytes, member accounted bytes, and reconciliation used baseline
-- no Telemt network mutation, no HTTP endpoint, no background loop in this milestone
+- add explicit phases `blocking`, `blocked`, `resetting`, and `enabling` alongside existing `applying`/`active`
+- add generation+expected-phase CAS transition primitive with a strict allowed transition graph
+- allow usage accounting while `blocked` (traffic is frozen) as well as existing `active` compatibility; never while `blocking`, `resetting`, `applying`, or `enabling`
+- no Telemt network calls, HTTP endpoint, goroutine, or migration in this milestone
+
+Allowed graph for this milestone:
+- `active -> blocking`
+- `blocking -> blocked`
+- `blocked -> resetting`
+- `applying -> enabling`
+- `applying -> active` for desired-disabled users
+- `enabling -> active`
 
 Acceptance:
-- same observation is idempotent: second accounting consumes zero bytes
-- partial crash cannot commit bucket changes without the new baseline, or baseline without bucket changes
-- reset-epoch mismatch and used-byte regression fail without mutation
-- inactive/applying projection cannot account traffic
-- expired or revoked member buckets remain chargeable for traffic authorized by that snapshot
-- accounting never exceeds a member's snapshotted allowance or a bucket's original bytes
-- any post-projection unexpected bucket consumption is detected as projection drift
-- insufficient saved allowance rolls the transaction back
-- unsigned Telemt values outside SQLite signed range are rejected
-- migration rerun and existing data remain valid
+- stale generation or phase cannot advance state
+- unsupported transition is rejected before DB mutation
+- transition updates exactly one row atomically
+- blocked usage accounting retains all B2B idempotency/drift/rollback guarantees
+- applying/blocking/resetting/enabling accounting is rejected
 - Go format/vet/test plus existing Docker/Telemt E2E remain green
 
-### Stage 6D2B2C — Crash-safe Telemt block/reset/apply state machine — PENDING
-Only after B2B is verified: fail-closed block, stable usage observation, ledger accounting, durable reset detection, new projection application, and resume-by-phase behavior.
+### Stage 6D2B2C2 — Telemt reconciliation orchestrator — PENDING
+Use persisted phases to disable the data-plane user, obtain a stable usage observation, account it, reset quota, prepare a new projection, patch/verify policy, restore desired enabled state, and resume safely after any phase boundary. Keep orchestration callable; no background scheduling yet.
+
+### Stage 6D2B2C3 — Reconciliation trigger/wiring — PENDING
+Only after C2 verification: wire initial/manual/boundary reconciliation into Control Plane lifecycle with bounded concurrency and shutdown behavior.
 
 ## Checkpoints
 
 - CP-000 repo initialized: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
-- CP-001 minimal Control Plane local: `b98507bbb3ef0a74e6e147286c22ab7d626f9e72`
 - CP-002 CI foundation: `084d4a1256a6b28412d9457f6568a4138e09c83c`, CI `34419759826`
 - CP-003 persistence/admin: `5798075de40d2f966d8546a18e6fa450d7142f90`, CI `34420104043`
 - CP-004 Web auth: `2e83b4770dd8e26fc5c0ebcca8dee6aa51111254`, CI `34420655852`
@@ -124,32 +119,34 @@ Only after B2B is verified: fail-closed block, stable usage observation, ledger 
 - CP-011 Credit Bucket ledger: `50baa6572c01bf320ac475339cc82a6710438de8`, CI `34448520864`
 - CP-012 quota usage + pure projection: `1013aca4ea01456de043b3e98a74be4686532632`, CI `34449339437`
 - CP-013 durable projection journal: `2cc686fa1da66b8cf3b37c1a6565d0bbb94520bf`, CI `34452322294`
+- CP-014 atomic usage accounting: `cdde3bfb7a953d3be619e7d82204790dd2b6182e`, CI `34453311029`
 
-Recovery point: CP-013. If interrupted during B2B, inspect every commit/file after CP-013 and repair only atomic usage accounting before any Telemt mutation.
+Recovery point: CP-014. If interrupted during C1, inspect every commit/file after CP-014 and repair only phase-transition/accounting compatibility before any Telemt mutation.
 
 ## Important decisions/discoveries
 
-- Telemt source is not copied; integration is via authenticated API and pinned release artifacts.
-- Telemt API remains unexposed on host and authenticated by protected Bearer token.
-- SQLite stays single-connection in MVP so connection-scoped PRAGMAs remain reliable.
-- Random Panel port is convenience/conflict avoidance, not a security boundary; production TLS hardening remains required.
-- Credit Bucket ledger is authoritative; wall-clock expiry needs no background write to become effective.
-- Telemt quota counter is persistent `used_bytes` since reset and admission rejects when `used_bytes >= configured quota`; quota `0` blocks immediately.
-- A projection needs both next finite expiry and next future-start boundary.
-- Telemt has one quota/expiry while the ledger has multiple independent windows, so each applied projection must retain exact member allowances/order for later historical charging.
-- Cross-system reconciliation must be fail-closed and resumable by persisted phase; never pretend SQLite + Telemt form one transaction.
+- Telemt source is not copied; integration is via authenticated API and pinned artifacts.
+- Telemt API is unexposed on host and Bearer-authenticated.
+- SQLite remains single-connection in MVP so connection-scoped PRAGMAs stay reliable.
+- Random Panel port avoids conflicts; it is not a security boundary.
+- Credit Bucket ledger is authoritative; Telemt is an enforcement projection.
+- Telemt quota is persistent absolute `used_bytes` since reset; quota `0` blocks admission.
+- Each applied projection retains exact member allowances/order so historical traffic remains attributable after expiry/revocation.
+- Reconciliation will disable the Telemt user before stable accounting because disable cancels active sessions; Control Plane desired-enabled state remains separate and must be re-read before restoration.
+- Cross-system reconciliation is fail-closed and persisted by phase; SQLite + Telemt are never treated as one transaction.
 
 ## Validation/failure log
 
-- Stage 5 `c1cde407...`, CI `34426475546`: bootstrap secret mode 0640 rejected; kept strict validation and fixed ownership/mode.
-- Stage 5 `34b455b0...`, CI `34426870772`: E2E test path bug; test harness fixed only.
+- Stage 5 `c1cde407...`, CI `34426475546`: bootstrap secret mode issue; strict validation kept and ownership/mode fixed.
+- Stage 5 `34b455b0...`, CI `34426870772`: E2E path harness bug; production unchanged.
 - Stage 6A `39349dcf...`, CI `34437891406`: unreliable port assertion; replaced with Docker HostConfig inspection.
-- Stage 6A `91722c95...`, CI `34438040249`: protected token read without sudo; harness fixed, token stayed 0600.
-- Stage 6B `0fbb8d72...`, CI `34438839369`: format-only failure; gofmt repair verified at CP-007.
-- Stage 6D2B1 `86090aba...`, CI `34449178722`: PASS but superseded after self-review found future-start boundary missing; repaired at CP-012.
-- Stage 6D2B2A intermediate `44b3dc76...`, CI `34452143936`: schema was published before migration-count test update, so CI failed on expected migration count; no rollback/force used. Final candidate `2cc686fa...`, CI `34452322294`: PASS; CP-013.
-- Local B2A SQL/FK cascade was additionally exercised with SQLite. Repository-wide Go verification remains GitHub CI authoritative.
+- Stage 6A `91722c95...`, CI `34438040249`: protected token harness read fixed; token remained 0600.
+- Stage 6B `0fbb8d72...`, CI `34438839369`: format-only failure; repaired at CP-007.
+- Stage 6D2B1 `86090aba...`, CI `34449178722`: PASS but superseded after self-review found missing future-start boundary; repaired at CP-012.
+- Stage 6D2B2A intermediate `44b3dc76...`, CI `34452143936`: migration committed before migration-count test, producing expected count failure; no reset/force. Final `2cc686fa...`, CI `34452322294`: PASS; CP-013.
+- Stage 6D2B2B `cdde3bfb...`, CI `34453311029`: PASS for format/vet/test and installer/Telemt E2E; CP-014.
+- Full local Go suite remains unavailable in the container; GitHub CI is authoritative. Local SQL/gofmt checks are supplementary only.
 
 ## Current next action
 
-Implement only Stage 6D2B2B from CP-013: migration for per-member accounted bytes and one transactional usage-accounting primitive with focused tests. Do not mutate Telemt until B2B is separately verified.
+Implement only Stage 6D2B2C1 from CP-014: strict durable phase transition CAS plus blocked-phase accounting compatibility and focused tests. Do not make Telemt network mutations until C1 is separately verified.
