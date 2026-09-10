@@ -28,6 +28,7 @@ type forcedJoinPayload struct {
 func NewWithProxyServicesAndForcedJoin(db *sql.DB, options Options, client *telemt.Client, trigger quotaReconcileTrigger) *Server {
 	s := NewWithProxyServices(db, options, client, trigger)
 	s.registerForcedJoinRoutes()
+	s.registerReferralSettingsRoutes()
 	return s
 }
 
