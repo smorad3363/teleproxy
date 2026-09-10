@@ -3,7 +3,7 @@
 Status: ACTIVE
 Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
-Latest verified checkpoint: `1c7068420ac34a9c5182878e7befeeb5629d8ffc`
+Latest verified checkpoint: `66353eee172412c270b8b50be3be2c5b18f04caf`
 
 ## Purpose
 
@@ -47,16 +47,17 @@ On interruption: read this plan; compare branch head with `Latest verified check
 - CP-019 Telegram identity + idempotent start-gift: `a7f83236a797120d2f5f34d8201a7de73b0b959f`, CI `34463953470` PASS.
 - CP-020 Telegram Bot API + safe start core: `0ee6a2c0651c1db150b6939341664b7ede203c38`, CI `34465039914` PASS.
 - CP-021 authenticated Telegram webhook wiring: `1c7068420ac34a9c5182878e7befeeb5629d8ffc`, CI `34468311092` PASS.
+- CP-022 durable Telemt provisioning ownership proof: `66353eee172412c270b8b50be3be2c5b18f04caf`, CI `34469442781` PASS.
 
-### CP-021 implemented
+### CP-022 implemented
 
-- optional all-or-none Bot config: token file, webhook-secret file and Bot username
-- owner-only webhook secret loader validates Telegram-compatible 1..256 ASCII token without leaking content
-- fixed `/telegram/webhook` route is outside admin session/CSRF mux and requires exact secret header before body parsing
-- authenticated requests have global/per-transport-source fixed-window bounds; Telegram user IP is never used as account/fraud identity
-- webhook body is hard-capped before JSON decode; malformed/unsupported input cannot mutate DB
-- valid private `/start` reuses CP-019 idempotent transaction and B1 sender; outbound ambiguity never rolls back or causes Telegram webhook replay duplicates
-- Compose only passes optional Bot settings; existing installer remains Bot-optional and rerun E2E unchanged
+- additive migration 007 stores one provisioning journal per proxy user with phase, SHA-256 secret digest, narrow error code and timestamps; plaintext MTProto secrets are impossible to persist through this schema
+- provisioning attempts generate a cryptographically random 16-byte/32-hex secret in memory and persist only its digest before network create
+- Telemt client can create a user with a caller-supplied validated secret while legacy admin create behavior remains unchanged
+- validated Telemt links normalize classic/secure/TLS encodings back to the effective raw 32-hex secret for ownership comparison
+- ownership comparison is constant-time and produces an unforgeable package-private-backed `OwnershipProof`; `MarkOwned` requires that proof
+- prepared-attempt digest may be CAS-replaced only after Telemt non-existence is established, enabling crash-before-network recovery without adopting a pre-existing same-name user
+- migration 007 has upgrade/rerun/cascade coverage
 
 ## Supplied source hashes
 
@@ -73,31 +74,30 @@ Telemt 3.5.7, upstream commit `4ca7418442478cd92f9e861c21977a81b249efc8`:
 
 ## Active stage
 
-### Stage 7B3A — Durable Telemt provisioning ownership proof — ACTIVE
+### Stage 7B3B — Bot proxy provisioning + link response — ACTIVE
 
-Purpose: before Bot `/start` provisions proxy users, make Telemt create/retry ownership verifiable across timeout/crash without ever storing the plaintext MTProto secret.
+Purpose: compose CP-019 Telegram identity, CP-022 ownership proof and CP-017 quota runner into a crash-safe `/start` provisioning flow without persisting MTProto secrets.
 
 Scope only:
-- additive provisioning journal keyed one-to-one by `proxy_user_id`, with phase, SHA-256 secret digest, timestamps and narrow last-error code; never plaintext secret
-- extend Telemt client with `CreateUserWithSecret` using the upstream optional 32-hex secret field; keep existing `CreateUser` behavior unchanged
-- add cryptographically random 16-byte/32-hex secret generation in Control Plane memory for provisioning attempts
-- persist only its SHA-256 digest before network create
-- add a verifier that extracts the effective raw 32-hex user secret from validated classic/secure/TLS `tg://proxy` links and compares the digest in constant time
-- state transitions are CAS-like and only a verified digest can mark ownership `owned`
-- pre-existing Telemt username discovered before a new attempt is a collision, not silently adopted
-- no webhook/main wiring, no quota trigger, no user-facing link response, Forced Join or referrals in 7B3A
+- add a testable Bot provisioning application service; serialize one proxy username per process while DB/CAS journal remains the durable cross-retry guard
+- for an owned journal, verify the Telemt user exists and continue without requiring the historical plaintext secret
+- for a prepared journal, GET Telemt first: if found, prove ownership from links before marking owned; if absent, CAS-replace stale digest with a new in-memory attempt, create disabled with caller secret, verify links, then mark owned
+- ambiguous create failures remain `prepared`; retry must GET+prove before any further create
+- a pre-existing Telemt user without a matching prepared digest is collision/fail-closed, never adopted
+- after ownership is established, trigger quota reconciliation; do not directly enable the user
+- retrieve validated Telemt links only after reconciliation has been triggered; expose status/link text through the Bot response without storing link or plaintext secret in SQLite
+- wire the service into the authenticated webhook while keeping unsupported commands ignored and outbound Bot API ambiguity non-destructive
+- no Forced Join, referrals/rewards, sponsor/Admin UI or webhook registration in this milestone
 
 Acceptance:
-- DB cannot store plaintext provisioning secret and digest length is constrained
-- retry after ambiguous create can prove ownership from Telemt links before proceeding
-- unrelated/pre-existing same-name Telemt users cannot be adopted because their link secret digest differs
-- classic, secure (`dd`) and TLS (`ee`) link encodings normalize to the same raw 32-hex secret digest; malformed links are rejected
-- existing admin `CreateUser`/rotate behavior stays compatible
-- migrations are additive/rerun-safe with upgrade coverage
+- first `/start` creates Control Plane identity/gift, creates Telemt user disabled, establishes ownership proof, queues reconciliation and returns a safe status/link response
+- replay after success does not rotate/recreate secret
+- timeout after Telemt create is recoverable by GET+ownership proof without a second create
+- crash before network create can safely rotate the prepared digest only after GET proves absence
+- same-name Telemt collision never gets adopted
+- runner trigger failure leaves owned state recoverable and no direct enable occurs
+- concurrent same-user provisioning is serialized and converges to one Telemt user
 - Go format/vet/test and Docker/Telemt installer E2E remain green
-
-### Stage 7B3B — Bot proxy provisioning + link response — PENDING
-Use verified 7B3A ownership journal from the `/start` application: create missing Telemt users disabled, recover ambiguous attempts only after ownership proof, trigger quota reconciliation, retrieve Telemt-generated links, and return link/status without persisting plaintext secrets.
 
 ### Stage 7C — Forced Join — PENDING
 Configurable required channels, membership checks, manual recheck, and fail-safe user messaging.
@@ -112,7 +112,8 @@ Unique-per-invitee referral attribution, self-referral protection, idempotent re
 - SQLite stays single-connection in MVP so connection-scoped PRAGMAs remain reliable.
 - Bot token and webhook secret are protected runtime files, not ordinary SQLite settings.
 - Telemt user views reconstruct `tg://proxy` links from Telemt-managed user secrets.
-- Upstream CreateUser accepts an optional caller-provided 32-hex secret. For crash-safe Bot provisioning, Teleproxy can choose a random secret in memory, persist only its digest, then later prove whether a Telemt user belongs to that attempt by digesting the secret encoded in Telemt-generated links.
+- Upstream CreateUser accepts an optional caller-provided 32-hex secret. Teleproxy can choose a random secret in memory, persist only its digest, and prove an ambiguous create later from Telemt-generated links.
+- A provisioning ownership journal proves creation identity; it must not be treated as a permanent assertion about the current secret after an intentional admin secret rotation. Once phase is `owned`, later normal operations identify the user by Control Plane mapping rather than re-validating the historical digest.
 
 ## Validation/failure log
 
@@ -128,10 +129,12 @@ Unique-per-invitee referral attribution, self-referral protection, idempotent re
 - 7A publish intermediate `bcac80e9...`: accidental README commit while intending ref move; no reset/force; next commit restored exact prior README blob and net feature diff was clean.
 - 7A `a7f83236...`, CI `34463953470`: PASS; CP-019.
 - 7B1 `0ee6a2c0...`, CI `34465039914`: PASS; CP-020.
-- 7B2 local pre-publish test caught body-cap status ambiguity (400 before decoder crossed MaxBytesReader); changed to read `limit+1` first so oversized bodies deterministically return 413.
-- 7B2 `1c706842...`, CI `34468311092`: Go + installer/Telemt E2E PASS; CP-021.
+- 7B2 local pre-publish test caught body-cap status ambiguity; changed to read `limit+1` first so oversized bodies deterministically return 413.
+- 7B2 `1c706842...`, CI `34468311092`: PASS; CP-021.
+- 7B3A `f52aa0b6...`, CI `34469352217`: format-only failure in manually transferred `create_with_secret_test.go`; production files were unchanged.
+- 7B3A repair `66353eee...`, CI `34469442781`: Go + installer/Telemt E2E PASS; CP-022.
 - Full local Go suite remains unavailable in the container because external module DNS is unavailable; GitHub CI is authoritative. Standard-library-only slices are locally tested when possible.
 
 ## Current next action
 
-Implement only Stage 7B3A from CP-021: additive provisioning ownership journal, caller-supplied Telemt secret create contract, and digest proof from validated Telemt links. Do not wire provisioning into webhook until 7B3A is separately verified.
+Implement only Stage 7B3B from CP-022: crash-safe provisioning application orchestration, quota-runner trigger, validated link/status response, and narrow webhook wiring. Do not start Forced Join or referral logic until B3B is separately verified.
