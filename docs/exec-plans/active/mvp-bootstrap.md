@@ -3,7 +3,7 @@
 Status: ACTIVE
 Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
-Latest verified checkpoint: `907d818300f9cdb01473fecacf0cd76bd8db1438`
+Latest verified checkpoint: `50baa6572c01bf320ac475339cc82a6710438de8`
 
 ## Purpose
 
@@ -18,7 +18,7 @@ Build Teleproxy incrementally from an empty repository while keeping every miles
 - No plaintext passwords, session/API/MTProto secrets, bot tokens, or private keys in logs/state.
 - Proxy-user secrets are reveal-once and are never stored by Control Plane.
 - Desired state is persisted before data-plane reconciliation so Telemt outages cannot lose admin intent.
-- Roadmap quota business model uses Credit Buckets with independent expiry; do not collapse it into a single business `traffic_limit` field. Telemt quota/expiry values are enforcement projections, not the reward-ledger source of truth.
+- Roadmap quota business model uses Credit Buckets with independent expiry; Telemt quota/expiry values are enforcement projections, never the reward-ledger source of truth.
 
 ## Recovery protocol
 
@@ -70,56 +70,47 @@ Verified `c67874de95b2ca4ff1786ffbd349fb091f270647`; CI `34438961960` PASS. Prot
 Verified `281f91afca202d0cc9a61e64fe88fe7ebbea5aab`; CI `34445848656` PASS. `proxy_users` desired/sync state, no secret column, typed Telemt create/list/enable/disable/rotate calls, bounded upstream error classification.
 
 ### Stage 6C2 — Authenticated proxy-user API + reconciliation — COMPLETE
-Verified `24cec6f875fb5f56bfb97d8159d8fa2ac3b8e533`; CI `34446509254` PASS.
-
-Implemented authenticated proxy-user create/list/enable/disable/rotate, DB-first desired state, session-bound CSRF on mutations, safe `TELEMT_*` reconciliation errors, reveal-once secrets, and integration coverage.
+Verified `24cec6f875fb5f56bfb97d8159d8fa2ac3b8e533`; CI `34446509254` PASS. Authenticated lifecycle API, DB-first desired state, session-bound CSRF, safe `TELEMT_*` reconciliation errors, reveal-once secrets.
 
 ### Stage 6D1 — Telemt quota/expiry enforcement contract — COMPLETE
-Verified `907d818300f9cdb01473fecacf0cd76bd8db1438`; CI `34447125904` PASS.
+Verified `907d818300f9cdb01473fecacf0cd76bd8db1438`; CI `34447125904` PASS. Typed quota/expiry PATCH with exact merge-patch semantics, RFC3339 validation, quota reset primitive, bounded safe responses.
+
+### Stage 6D2A — Credit Bucket transactional ledger — COMPLETE
+Verified `50baa6572c01bf320ac475339cc82a6710438de8`; CI `34448520864` PASS.
 
 Implemented:
-- typed Telemt per-user quota/expiry PATCH contract
-- exact JSON Merge Patch semantics: omitted = unchanged, `null` = remove, numeric/string value = set
-- explicit preservation of quota value `0` instead of treating it as removal
-- RFC3339 expiry validation before network calls
-- typed quota reset primitive against `/v1/users/{username}/reset-quota`
-- bounded upstream response handling and safe failure classification
-- focused tests plus existing Docker/Telemt installer E2E regression coverage
+- additive `003_credit_buckets.sql` linked to Control Plane proxy users
+- integer byte accounting with original/consumed bytes, starts/expiry, reward type/source, and administrative active/revoked state
+- effective pending/active/exhausted/expired/revoked status derived from wall clock and consumption
+- transactional all-or-nothing consumption
+- finite buckets before non-expiring buckets, earliest expiry first
+- future, expired, exhausted, and revoked buckets excluded from consumption
+- exact insufficient-credit rollback behavior
+- migration/ledger tests plus existing Docker/Telemt installer E2E regression coverage
 
 ## Active stage
 
-### Stage 6D2A — Credit Bucket transactional ledger — ACTIVE
-
-Roadmap contract for each Credit Bucket:
-- original amount
-- consumed amount
-- start timestamp
-- expiry timestamp
-- reward type
-- reward source
-- status
-- consumption prioritizes buckets with the nearest expiry
+### Stage 6D2B1 — Telemt quota usage read + pure credit projection — ACTIVE
 
 Scope only:
-- add backward-compatible SQLite migration for credit buckets linked to Control Plane proxy users
-- add a focused credit domain/store with grant/list/balance/consume primitives
-- make consumption transactional and all-or-nothing when available credit is insufficient
-- consume nearest-expiry eligible buckets first, with non-expiring buckets last
-- derive effective pending/active/exhausted/expired/revoked state without requiring background jobs for wall-clock expiry
-- preserve integer byte accounting; no floating-point traffic math
-- no HTTP, bot, referral, or Telemt projection changes in this milestone
+- add typed read support for Telemt `GET /v1/stats/users/quota`
+- expose target-user quota counter state without surfacing upstream error bodies
+- add pure deterministic projection from Credit Buckets: currently available bytes and next finite expiry boundary
+- exclude pending/expired/exhausted/revoked buckets from projection
+- reject integer overflow rather than wrapping byte totals
+- no DB migration, HTTP endpoint, background loop, Telemt reset, Telemt PATCH, or control-plane wiring in this milestone
 
 Acceptance:
-- migration is rerunnable through existing migration framework and preserves existing data
-- invalid amount/time/source/type input is rejected before insert
-- future-start, expired, revoked, and exhausted buckets are not consumable
-- finite expiries are consumed before non-expiring buckets; earlier expiry before later expiry
-- insufficient credit leaves every bucket unchanged
-- successful multi-bucket consume commits exact byte totals atomically
+- Telemt quota usage list is parsed with bounded existing client machinery
+- target user lookup returns used bytes/reset epoch when present and a clean absence when omitted by Telemt
+- pure projection sums only active remaining bytes
+- next expiry is earliest finite expiry among active buckets; non-expiring-only projection has no boundary
+- zero available credit projects zero bytes without inventing unlimited quota semantics
+- malformed upstream output and overflow are rejected safely
 - Go format/vet/test plus existing Docker/Telemt E2E remain green
 
-### Stage 6D2B — Credit projection/reconciliation to Telemt — PENDING
-After ledger verification, project effective remaining bytes/expiry into Telemt and reconcile reset/patch behavior separately. Credit Buckets remain business source of truth.
+### Stage 6D2B2 — Crash-safe quota reconciliation — PENDING
+Design and persist reconciliation baseline before network mutation. Telemt quota counter is absolute since its last reset, so ledger usage delta must be accounted exactly once before reset/new projection. Do not implement reset/patch ordering without durable recovery state.
 
 ## Checkpoints
 
@@ -134,19 +125,22 @@ After ledger verification, project effective remaining bytes/expiry into Telemt 
 - CP-008 proxy lifecycle core: `281f91afca202d0cc9a61e64fe88fe7ebbea5aab`, CI `34445848656`
 - CP-009 authenticated lifecycle API: `24cec6f875fb5f56bfb97d8159d8fa2ac3b8e533`, CI `34446509254`
 - CP-010 Telemt quota/expiry contract: `907d818300f9cdb01473fecacf0cd76bd8db1438`, CI `34447125904`
+- CP-011 Credit Bucket ledger: `50baa6572c01bf320ac475339cc82a6710438de8`, CI `34448520864`
 
-Recovery point: CP-010. If interrupted during 6D2A, inspect all commits/files after CP-010 and repair/finish only the Credit Bucket ledger before any projection, bot, referral, sponsor, or UI expansion.
+Recovery point: CP-011. If interrupted during 6D2B1, inspect all commits/files after CP-011 and repair/finish only quota-usage reading and pure projection before any reconciliation, bot, referral, sponsor, or UI expansion.
 
 ## Important decisions/discoveries
 
 - Telemt source is not copied; integration is via authenticated API and pinned release artifacts.
-- Telemt 3.5.7 rejects empty `[access.users]`; internal disabled bootstrap user satisfies that invariant until real users exist.
-- Project Docker bridge cannot be `internal:true` because Telemt needs outbound Telegram connectivity; API isolation is no host publication + Bearer auth.
+- Telemt API remains unexposed on host and authenticated by protected Bearer token.
 - SQLite stays single-connection in MVP so connection-scoped PRAGMAs remain reliable.
 - Random Panel port is convenience/conflict avoidance, not a security boundary; production TLS hardening remains required.
-- Roadmap requires Credit Buckets and nearest-expiry-first consumption; temporary referral rewards remain independent from other quota.
-- Credit expiry is effective wall-clock state and should not depend on a background task merely to become non-consumable.
-- Telemt quota/expiry is an enforcement projection; the Credit Bucket ledger remains authoritative business state.
+- Roadmap requires Credit Buckets and nearest-expiry-first consumption; Credit Bucket ledger is authoritative business state.
+- Credit expiry is effective wall-clock state and does not depend on a background job to become non-consumable.
+- Telemt quota counter is process-scoped/persisted `used_bytes` since reset; admission rejects when `used_bytes >= configured quota`.
+- Telemt quota value `0` therefore blocks admission immediately; it is not unlimited.
+- Telemt `GET /v1/stats/users/quota` reports positive configured quota users with `data_quota_bytes`, `used_bytes`, and `last_reset_epoch_secs`.
+- Because Telemt has one quota/expiry per user while the business ledger has multiple expiries, reconciliation boundaries must account observed usage into the ledger before resetting/reprojecting.
 
 ## Validation/failure log
 
@@ -159,9 +153,10 @@ Recovery point: CP-010. If interrupted during 6D2A, inspect all commits/files af
 - Stage 6B `0fbb8d72...`, CI `34438839369`: format-only failure; gofmt repair `c67874de...`, CI `34438961960` PASS; CP-007.
 - Stage 6C1 `281f91af...`, CI `34445848656`: PASS; CP-008.
 - Stage 6C2 `24cec6f8...`, CI `34446509254`: PASS; CP-009.
-- Stage 6D1 `907d8183...`, CI `34447125904`: PASS for Go and installer/Telemt E2E; CP-010.
-- 2026-09-10: source SHA-256 values rechecked from mounted originals; a transient plan typo for ROADMAP_EN was corrected immediately before 6D1 code changes.
+- Stage 6D1 `907d8183...`, CI `34447125904`: PASS; CP-010.
+- Stage 6D2A `50baa657...`, CI `34448520864`: PASS for format/vet/test plus installer/Telemt E2E; CP-011.
+- Local 6D2A test attempt could not resolve github.com from the container; no local-pass claim was made. GitHub CI completed all required verification successfully.
 
 ## Current next action
 
-Implement only Stage 6D2A from CP-010: additive credit-bucket migration, transactional domain/store, and focused migration/ledger tests. Promote only after Go and existing Docker/Telemt E2E are green.
+Implement only Stage 6D2B1 from CP-011: typed Telemt quota usage read and pure deterministic Credit Bucket projection with focused tests. Promote only after Go and existing Docker/Telemt E2E are green.
