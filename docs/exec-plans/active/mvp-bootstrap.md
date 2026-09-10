@@ -3,7 +3,7 @@
 Status: ACTIVE
 Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
-Latest verified checkpoint: `caf9bffd275ed2418b540773042875b8fe2d23fa`
+Latest verified checkpoint: `5f96316f7ea58581dce0d8f8a312518fe595a42b`
 
 ## Recovery contract
 
@@ -42,16 +42,18 @@ Non-negotiable architecture: SQLite WAL/NORMAL is authoritative Control Plane st
 - CP-028 Forced Join manual recheck UX: `523d13000bd26f1eeb1f4bc3ad6a40a3ca0ea57b`, CI `34490204497` PASS.
 - CP-029 Referral identity + pending attribution domain: `989c32c234127e93879719a566046144201e6d18`, CI `34497165310` PASS.
 - CP-030 `/start` referral resolution wiring: `caf9bffd275ed2418b540773042875b8fe2d23fa`, CI `34497967471` PASS.
+- CP-031 Referral eligibility persistence primitives: `5f96316f7ea58581dce0d8f8a312518fe595a42b`, CI `34505475099` PASS.
 
-### CP-030 implemented
+### CP-031 implemented
 
-- gated Telegram `/start` resolves a bounded referral payload only after `telegramuser.Resolve` and before Forced Join, using the CP-029 domain primitive; ordinary `/start` without a payload remains unchanged.
-- a newly-created invitee can persist one `pending` attribution before a Forced Join block; fixed `forced_join_recheck` callback data still contains no referral code, inviter/invitee identity, entitlement, or secret data.
-- unknown, invalid, self, existing-user, and replayed referral inputs cannot overwrite attribution or create referral entitlement; the existing start gift/provisioning gates remain authoritative.
-- after a successful gated start or recheck, the response exposes the user's stable referral code/link and rewarded referral count. The link reuses the existing validated `TPROXY_BOT_USERNAME`; no second Bot token, username source, or Telegram identity API call was introduced.
-- D1B creates no referral reward Credit Bucket and does not transition `pending` attribution to `rewarded`/`rejected`.
-- the D1B diff from the CP-029 docs head contains only `internal/telegrambot/start.go`, `internal/telegrambot/webhook.go`, and `internal/telegrambot/referral_start_test.go`.
-- format, vet, full Go tests, installer syntax/unit tests, Docker prerequisites, and Telemt E2E/rerun all passed in CI `34497967471`.
+- additive migration `010_referral_eligibility.sql` adds nullable `eligible_at` without changing the existing `pending/rewarded/rejected` status contract; v9 pending rows upgrade unchanged and migration reruns preserve eligibility state.
+- `ApproveEligibility` records one durable eligibility approval while leaving the attribution `pending`; approval therefore does not imply reward issuance and creates no Credit Bucket.
+- `RejectEligibility` performs a terminal `rejected` transition with typed server-side reasons for anti-abuse, daily/weekly caps, cooldown, blacklist, and suspicious signals; invalid reasons do not mutate state.
+- eligibility approval/rejection are replay-safe and race-safe: only one mutation can win from an unapproved pending attribution, and later replay returns the persisted state rather than rewriting it.
+- `RewardedCount` remains based only on `status='rewarded'`; an approved-but-unrewarded attribution is deliberately excluded.
+- D2A changes no Bot/Forced Join/API/provisioning/Telemt behavior and creates no referral reward Credit Bucket because reward-recipient semantics remain unresolved.
+- the D2A diff from CP-030 docs head contains exactly seven files: referral migration/domain/tests plus database migration regression coverage.
+- format, vet, full Go tests, installer syntax/unit tests, Docker prerequisites, and Telemt E2E/rerun all passed in CI `34505475099`.
 
 ## Supplied source hashes
 
@@ -70,23 +72,38 @@ Telemt `3.5.7`, upstream commit `4ca7418442478cd92f9e861c21977a81b249efc8`.
 
 ## Active stage
 
-### Stage 7D2 — Referral eligibility + idempotent reward Credit Bucket — BLOCKED ON PRODUCT SEMANTICS
+### Stage 7D2B — Referral reward configuration primitives — ACTIVE
 
 Roadmap-confirmed behavior:
-- a referral is valid only for a new invitee, with no prior referral reward for that invitee, no self-referral, anti-abuse approval, and completed Forced Join when configured;
-- default referral reward is `2GB / 14 days` and reward values must be configurable;
-- referral reward creation must be idempotent and Credit Buckets remain the quota/reward source of truth.
+- default referral reward is `2GB / 14 days`;
+- reward amount and expiry must be configurable from Web Admin and Bot Admin;
+- Credit Buckets remain the reward/quota source of truth.
+
+Scope only:
+- add backend settings primitives for referral reward bytes and expiry duration, following the existing generic `settings` table pattern and fail-closed handling of corrupt stored values;
+- use the repository's existing decimal-byte convention (`100MB = 100_000_000` bytes) consistently for the roadmap's `2GB` default, without changing existing quota semantics;
+- validate positive bounded values and provide transaction-safe read helpers needed by later exactly-once reward issuance;
+- do not choose a reward recipient, create a referral Credit Bucket, mark an attribution `rewarded`, wire Bot/Web Admin settings UI, or bypass anti-abuse/Forced Join eligibility.
+
+Acceptance:
+- absent settings resolve to `2_000_000_000` bytes and `14 days`;
+- configured values round-trip and corrupt/invalid storage fails closed;
+- no migration is needed because the generic settings table already exists;
+- no referral attribution or Credit Bucket is mutated by reading/writing configuration;
+- format/vet/test and Docker/Telemt E2E remain green.
+
+### Stage 7D2C — Exactly-once referral reward issuance — BLOCKED ON PRODUCT SEMANTICS
 
 Unresolved product contract:
-- the supplied English and Persian roadmaps define the reward amount/expiry and invitee eligibility conditions but do not specify who receives the reward Credit Bucket: inviter, invitee, or both.
-- repository issue search found no product decision resolving that recipient as of CP-030.
-- do not infer a recipient from common referral conventions. Implementing any recipient without explicit repository/product evidence would invent business semantics.
+- the supplied English and Persian roadmaps define reward amount/expiry and invitee eligibility conditions but do not specify who receives the reward Credit Bucket: inviter, invitee, or both.
+- repository issue/code search found no product decision resolving that recipient as of CP-031.
+- do not infer a recipient from common referral conventions. Reward issuance remains blocked until this contract is explicit.
 
-D2 remains blocked until the reward recipient contract is explicit. Once resolved, implement in a separate recoverable milestone with exactly-once reward creation, typed rejection reasons, Forced Join completion enforcement, and no unrelated admin/anti-abuse expansion.
+Once resolved, implement exactly-once Credit Bucket creation from an approved attribution, atomically transition it to `rewarded`, preserve idempotency under crash/replay/concurrency, and enforce Forced Join plus anti-abuse before approval.
 
 ### Stage 7D3 — Minimum anti-abuse controls + admin configuration/history — PENDING
 
-Add the roadmap-required configurable caps/cooldowns/blacklist/history surfaces in small verified milestones. Suspicious scoring remains explicit and server-side, never a client-only decision.
+Add the roadmap-required configurable daily/weekly caps, cooldown, blacklist, suspicious-score/history and admin surfaces in small verified milestones. Suspicious scoring remains explicit and server-side, never a client-only decision.
 
 ## Important decisions
 
@@ -100,7 +117,8 @@ Add the roadmap-required configurable caps/cooldowns/blacklist/history surfaces 
 - Manual recheck callback data is fixed/non-secret; authoritative identity always comes from the Telegram update, not callback data.
 - Referral attribution must be durable before the Forced Join gap because recheck callback data intentionally carries no referral identity.
 - Production referral links reuse configured `TPROXY_BOT_USERNAME`; no extra token or runtime identity source is needed.
-- Referral credit recipient semantics remain unresolved for D2; do not issue referral rewards until repository/product evidence resolves inviter versus invitee versus both.
+- Eligibility approval is distinct from reward settlement: `pending + eligible_at` is approved but not rewarded.
+- Referral credit recipient semantics remain unresolved; do not issue referral rewards until repository/product evidence resolves inviter versus invitee versus both.
 
 ## Validation/failure log
 
@@ -119,9 +137,11 @@ Add the roadmap-required configurable caps/cooldowns/blacklist/history surfaces 
 - C2A produced two unattached mismatched Git blobs during transfer checks; neither was referenced by a tree/branch. Final six published SHAs matched local staging and CI `34482353102` passed.
 - C2B was published through seven coherent sequential fast-forward commits after an accidental direct `create_file` publication of `interactive.go`; no reset/force was used. Net diff from CP-027 contains exactly seven Telegram Bot files, and final CI `34490204497` passed.
 - C2B isolated local tests covered interactive transport/webhook behavior; production compile used type-compatible stubs because local Go is 1.23.2 while repository `go.mod` is Go 1.26. GitHub CI is authoritative for the full suite.
-- D1A was published as small sequential fast-forward commits. Intermediate schema commit `1efded4b6b583678637b3949b152bc2ab38c82ec` had Format/Vet PASS but `go test` failure in CI `34497018395`; GitHub connector did not expose the job log text, so no unsupported exact root-cause claim is recorded. Subsequent migration-test update and D1A tests produced final candidate `989c32c234127e93879719a566046144201e6d18`, whose full CI `34497165310` passed including Docker/Telemt E2E/rerun.
+- D1A was published as small sequential fast-forward commits. Intermediate schema commit `1efded4b6b583678637b3949b152bc2ab38c82ec` had Format/Vet PASS but `go test` failure in CI `34497018395`; subsequent migration-test update and D1A tests produced final candidate `989c32c234127e93879719a566046144201e6d18`, whose full CI `34497165310` passed including Docker/Telemt E2E/rerun.
 - D1B candidate `caf9bffd275ed2418b540773042875b8fe2d23fa` passed its first final full CI `34497967471`: Format/Vet/Test, installer syntax/unit, Docker prerequisites, and Telemt E2E/rerun all succeeded.
+- CP-030 docs promotion commit `2ad01cb8bce7b6d489c62e8594cebe99ea1774cf` also passed full CI `34498484861`.
+- D2A was published atomically as one seven-file commit `5f96316f7ea58581dce0d8f8a312518fe595a42b`; full CI `34505475099` passed on the first candidate, including Docker/Telemt E2E/rerun.
 
 ## Current next action
 
-Recovery starts from CP-030 (`caf9bffd275ed2418b540773042875b8fe2d23fa`). Do not implement Stage 7D2 reward issuance until the product contract explicitly states whether the `2GB / 14 days` referral Credit Bucket belongs to the inviter, invitee, or both. Once that decision exists, re-read this plan and the last D1B files before writing, then implement only the smallest D2 eligibility/reward milestone.
+Implement only Stage 7D2B from CP-031. Add referral reward amount/expiry backend settings with roadmap defaults and repository-consistent byte units. Do not issue a Credit Bucket or select a reward recipient. After D2B is separately verified, proceed to minimum anti-abuse milestones while keeping D2C blocked until recipient semantics become explicit.
