@@ -15,6 +15,7 @@ import (
 	"github.com/smorad3363/teleproxy/internal/config"
 	"github.com/smorad3363/teleproxy/internal/database"
 	"github.com/smorad3363/teleproxy/internal/httpapi"
+	"github.com/smorad3363/teleproxy/internal/proxyprovision"
 	"github.com/smorad3363/teleproxy/internal/quotareconcile"
 	"github.com/smorad3363/teleproxy/internal/telegrambot"
 	"github.com/smorad3363/teleproxy/internal/telemt"
@@ -98,6 +99,9 @@ func run(logger *slog.Logger) error {
 	api := httpapi.NewWithProxyServices(db, httpapi.Options{CookieSecure: cfg.CookieSecure}, proxyClient, quotaRunner)
 	var handler http.Handler = api.Handler()
 	if cfg.BotTokenFile != "" {
+		if proxyClient == nil || quotaRunner == nil {
+			return fmt.Errorf("configure Telegram Bot proxy provisioning: Telemt quota reconciliation is required")
+		}
 		botClient, err := telegrambot.NewFromTokenFile(cfg.BotTokenFile, 3*time.Second)
 		if err != nil {
 			return fmt.Errorf("configure Telegram Bot client: %w", err)
@@ -106,7 +110,11 @@ func run(logger *slog.Logger) error {
 		if err != nil {
 			return fmt.Errorf("configure Telegram webhook authentication: %w", err)
 		}
-		startApplication, err := telegrambot.NewStartApplication(db, cfg.BotUsername, nil)
+		provisioner, err := proxyprovision.NewService(db, proxyClient, quotaRunner, nil)
+		if err != nil {
+			return fmt.Errorf("configure Telegram proxy provisioning: %w", err)
+		}
+		startApplication, err := telegrambot.NewStartApplicationWithProvisioner(db, cfg.BotUsername, nil, provisioner)
 		if err != nil {
 			return fmt.Errorf("configure Telegram start application: %w", err)
 		}

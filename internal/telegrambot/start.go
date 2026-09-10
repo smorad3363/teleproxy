@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/smorad3363/teleproxy/internal/credit"
+	"github.com/smorad3363/teleproxy/internal/proxyprovision"
 	"github.com/smorad3363/teleproxy/internal/telegramuser"
 )
 
@@ -19,15 +20,33 @@ type StartResponse struct {
 	InitialGiftBytes int64  `json:"initial_gift_bytes"`
 	RemainingBytes   int64  `json:"remaining_bytes"`
 	Payload          string `json:"payload,omitempty"`
+	ProxyLink        string `json:"proxy_link,omitempty"`
+	ProxySyncState   string `json:"proxy_sync_state,omitempty"`
+}
+
+type proxyProvisioner interface {
+	Ensure(context.Context, string) (proxyprovision.Result, error)
 }
 
 type StartApplication struct {
 	db          *sql.DB
 	botUsername string
 	now         func() time.Time
+	provisioner proxyProvisioner
 }
 
 func NewStartApplication(db *sql.DB, botUsername string, now func() time.Time) (*StartApplication, error) {
+	return newStartApplication(db, botUsername, now, nil)
+}
+
+func NewStartApplicationWithProvisioner(db *sql.DB, botUsername string, now func() time.Time, provisioner proxyProvisioner) (*StartApplication, error) {
+	if provisioner == nil {
+		return nil, fmt.Errorf("Telegram proxy provisioner is required")
+	}
+	return newStartApplication(db, botUsername, now, provisioner)
+}
+
+func newStartApplication(db *sql.DB, botUsername string, now func() time.Time, provisioner proxyProvisioner) (*StartApplication, error) {
 	if db == nil {
 		return nil, fmt.Errorf("Telegram start database is required")
 	}
@@ -35,7 +54,7 @@ func NewStartApplication(db *sql.DB, botUsername string, now func() time.Time) (
 	if now == nil {
 		now = func() time.Time { return time.Now().UTC() }
 	}
-	return &StartApplication{db: db, botUsername: botUsername, now: now}, nil
+	return &StartApplication{db: db, botUsername: botUsername, now: now, provisioner: provisioner}, nil
 }
 
 func (a *StartApplication) Handle(ctx context.Context, update Update) (StartResponse, bool, error) {
@@ -62,7 +81,7 @@ func (a *StartApplication) Handle(ctx context.Context, update Update) (StartResp
 	if err != nil {
 		return StartResponse{}, true, fmt.Errorf("read Telegram user credit balance: %w", err)
 	}
-	return StartResponse{
+	response := StartResponse{
 		ChatID:           update.Message.Chat.ID,
 		TelegramID:       started.User.TelegramID,
 		ProxyUsername:    started.User.ProxyUsername,
@@ -70,5 +89,15 @@ func (a *StartApplication) Handle(ctx context.Context, update Update) (StartResp
 		InitialGiftBytes: started.InitialGiftBytes,
 		RemainingBytes:   remaining,
 		Payload:          command.Payload,
-	}, true, nil
+	}
+	if a.provisioner == nil {
+		return response, true, nil
+	}
+	provisioned, err := a.provisioner.Ensure(ctx, started.User.ProxyUsername)
+	if err != nil {
+		return StartResponse{}, true, fmt.Errorf("provision Telegram proxy: %w", err)
+	}
+	response.ProxyLink = provisioned.Link
+	response.ProxySyncState = string(provisioned.SyncState)
+	return response, true, nil
 }

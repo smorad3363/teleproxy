@@ -201,11 +201,18 @@ func validateWebhookSecret(secret string) error {
 }
 
 func formatStartResponse(response StartResponse) string {
-	state := "ready"
+	accountState := "ready"
 	if response.Created {
-		state = "created"
+		accountState = "created"
 	}
-	return fmt.Sprintf("Teleproxy account %s.\nUser: %s\nRemaining credit: %d bytes\nProxy link provisioning is pending.", state, response.ProxyUsername, response.RemainingBytes)
+	if response.ProxyLink == "" {
+		return fmt.Sprintf("Teleproxy account %s.\nUser: %s\nRemaining credit: %d bytes\nProxy link provisioning is pending.", accountState, response.ProxyUsername, response.RemainingBytes)
+	}
+	proxyState := "synchronizing"
+	if response.ProxySyncState == "synced" {
+		proxyState = "ready"
+	}
+	return fmt.Sprintf("Teleproxy account %s.\nUser: %s\nRemaining credit: %d bytes\nProxy status: %s.\nProxy link:\n%s", accountState, response.ProxyUsername, response.RemainingBytes, proxyState, response.ProxyLink)
 }
 
 func sourceAddress(remote string) string {
