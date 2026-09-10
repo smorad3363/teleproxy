@@ -95,7 +95,7 @@ func (s *Server) handleProxyUserCreate(lifecycle proxyUserLifecycle, trigger quo
 			return
 		}
 		if lifecycle == nil {
-			s.markProxySyncFailure(w, r, created.Username, "TELEMT_NOT_CONFIGURED", http.StatusServiceUnavaile)
+			s.markProxySyncFailure(w, r, created.Username, "TELEMT_NOT_CONFIGURED", http.StatusServiceUnavailable)
 			return
 		}
 		dataPlaneEnabled := created.DesiredEnable
@@ -153,7 +153,7 @@ func (s *Server) handleProxyUserEnabled(lifecycle proxyUserLifecycle, trigger qu
 			return
 		}
 		if lifecycle == nil {
-			s.markProxySyncFailure(w, r, pending.Username, "TELEMT_NOT_CONFIGURED", http.StatusServiceUnavaile)
+			s.markProxySyncFailure(w, r, pending.Username, "TELEMT_NOT_CONFIGURED", http.StatusServiceUnavailable)
 			return
 		}
 		dataPlaneEnabled := enabled
