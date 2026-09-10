@@ -20,7 +20,7 @@ type Config struct {
 	BootstrapAdminUser    string
 	BootstrapPasswordFile string
 	CookieSecure          bool
-	TelemtAPIURL           string
+	TelemtAPIURL          string
 	TelemtAPITokenFile    string
 	ReadHeaderTimeout     time.Duration
 	ReadTimeout           time.Duration
