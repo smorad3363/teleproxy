@@ -16,6 +16,7 @@ type startGiftSettingsPayload struct {
 }
 
 func (s *Server) registerStartGiftSettingsRoutes() {
+	s.mux.HandleFunc("GET /settings", s.handleStartGiftSettingsPage)
 	s.mux.HandleFunc("GET /api/settings/start-gift", s.handleStartGiftSettingsGet)
 	s.mux.HandleFunc("PUT /api/settings/start-gift", s.handleStartGiftSettingsPut)
 }
