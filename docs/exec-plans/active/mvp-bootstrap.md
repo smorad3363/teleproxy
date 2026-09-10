@@ -3,7 +3,7 @@
 Status: ACTIVE
 Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
-Latest verified checkpoint: `64dece67e2e0b9e2c2a9e2653b6fee42921c4450`
+Latest verified checkpoint: `e7ac0ccdd4747667dec8681452b3ace4e4539fd0`
 
 ## Recovery contract
 
@@ -56,6 +56,7 @@ Non-negotiable architecture: SQLite WAL/NORMAL is authoritative Control Plane st
 - CP-042 Web Panel Forced Join management surface: `4b28df5b30e1686a0f43400df7425e400b5951b6`, CI `34530056110` PASS.
 - CP-043 Authenticated read-only User inventory API: `5f513acd1849313beee05cd739640aad4b507e7a`, CI `34541388012` PASS.
 - CP-044 Web Panel read-only User inventory surface: `64dece67e2e0b9e2c2a9e2653b6fee42921c4450`, CI `34541946964` PASS.
+- CP-045 Authenticated Start Gift settings API: `e7ac0ccdd4747667dec8681452b3ace4e4539fd0`, CI `34542385124` PASS.
 
 ### CP-042 implemented
 
@@ -88,6 +89,15 @@ Non-negotiable architecture: SQLite WAL/NORMAL is authoritative Control Plane st
 - no Telegram/Telemt calls, new secrets, migrations, inferred Telegram username/traffic/Node/Sponsor/last-activity fields or installer/compose changes were introduced.
 - candidate `64dece67e2e0b9e2c2a9e2653b6fee42921c4450` is one atomic four-file fast-forward and passed Format, Vet, full Go tests, installer syntax/unit tests, Docker prerequisites and Telemt E2E/rerun in CI `34541946964`.
 
+### CP-045 implemented
+
+- added authenticated `GET /api/settings/start-gift` and CSRF-protected `PUT /api/settings/start-gift` over the existing `settings.StartGiftBytes` / `SetStartGiftBytes` contract.
+- GET returns the existing default `100000000` bytes when unset and both successful methods are `Cache-Control: no-store`.
+- PUT uses a 4 KiB bounded JSON body, rejects unknown fields/trailing JSON, accepts only positive int64 bytes and returns typed safe Problem responses for malformed, oversized or invalid values.
+- changing the setting affects only a future exactly-once gift: tests prove an already-gifted user's original Credit Bucket remains unchanged and replay preserves that original amount, while a later new user's gift uses the updated value.
+- no historical Credit Bucket rewrite/top-up, migration, user-specific mutation, reward issuance, Telegram/Telemt call, Bot content/token change or unrelated settings surface was added.
+- candidate `e7ac0ccdd4747667dec8681452b3ace4e4539fd0` is one atomic three-file fast-forward and passed Format, Vet, full Go tests, installer syntax/unit tests, Docker prerequisites and Telemt E2E/rerun in CI `34542385124`.
+
 ## Supplied source hashes
 
 - AGENTS: `4a0c4156f14c3a40fbf2c6da8937f36c9f7f15f694bc3895181b13ccc0984483`
@@ -104,24 +114,26 @@ Telemt `3.5.7`, upstream commit `4ca7418442478cd92f9e861c21977a81b249efc8`.
 
 ## Active stage
 
-### Stage 11C — Authenticated Start Gift settings API — ACTIVE
+### Stage 11D — Web Panel Start Gift settings surface — ACTIVE
 
-Roadmap basis: Web Panel Settings explicitly includes `start gift`. The repository already has `settings.StartGiftBytes` / `SetStartGiftBytes`, and Telegram `EnsureStartGift` reads that setting transactionally before creating the exactly-once start-gift Credit Bucket. This milestone exposes only that existing contract to authenticated Admin API clients.
+Roadmap basis: Web Panel Settings explicitly includes `start gift`. CP-045 now exposes the existing start-gift setting through a typed authenticated API. This milestone adds only the matching server-rendered configuration surface.
 
 Scope only:
-- add authenticated `GET` and `PUT` for the existing start-gift byte setting using the current Admin API auth + CSRF contract;
-- use a bounded JSON body, reject unknown fields/trailing JSON and keep errors typed/safe;
-- accept only a positive int64 byte value, reuse `settings.SetStartGiftBytes` as the mutation primitive and return the effective stored value;
-- default GET must return `settings.DefaultStartGiftBytes` when no override exists, matching current Telegram start behavior;
-- mutation affects only future users whose exactly-once start gift has not yet been created; do not rewrite or top up existing Credit Buckets;
-- no new migration, no reward-recipient semantics, no Telegram/Telemt call, no Bot token/content changes and no user-specific mutation endpoint.
+- add authenticated server-rendered `/settings` using the existing minimal Web Panel pattern and no frontend framework;
+- show and edit only the existing Start Gift byte value; do not expose unrelated settings in this milestone;
+- mutation must use only same-origin `PUT /api/settings/start-gift` with session-derived CSRF;
+- preserve exact positive int64 decimal values in the browser without converting them through JavaScript `Number`, `parseInt` or floating point;
+- add the smallest Dashboard/navigation link needed to reach Settings;
+- rendering must be `no-store` and must not mutate settings or Credit Buckets;
+- no Bot content/token editing, user-specific mutation, Telegram/Telemt call, reward issuance, Node/Sponsor routing or installer/compose change.
 
 Acceptance:
-- unauthenticated GET/PUT follow existing Admin API behavior and PUT requires valid session-derived CSRF;
-- GET returns default or configured positive int64 bytes with `Cache-Control: no-store`;
-- PUT rejects malformed, unknown-field, trailing, oversized, zero/negative and overflow input with typed safe problems and no setting mutation;
-- a successful PUT changes the amount used by a later `EnsureStartGift`, while replay for an already-gifted user remains exactly-once and preserves the original bucket amount;
-- no existing Credit Bucket is mutated by changing the setting;
+- unauthenticated `/settings` redirects to `/login` without CSRF/settings markup;
+- authenticated page renders default/configured Start Gift bytes exactly, including values above JavaScript's safe-integer range;
+- save wiring targets only the CP-045 API with valid session-derived CSRF and exact integer JSON text;
+- safe API Problem messages are surfaced without parsing human-readable strings for control flow;
+- page rendering leaves settings and Credit Buckets unchanged;
+- Dashboard reaches `/settings`;
 - existing Sponsor/Node/referral/Forced Join/User/proxy/quota behavior remains unchanged;
 - format/vet/test and Docker/Telemt E2E remain green.
 
@@ -146,7 +158,7 @@ Roadmap requires configurable daily/weekly caps, cooldowns, blacklist and suspic
 - Forced Join gates gift and provisioning; referral attribution is durable before the Forced Join recheck gap.
 - Referral credit recipient semantics remain unresolved; do not issue referral rewards.
 - Sponsor Profile persistence is independent of assignment routing; sticky/weighted assignment and Telemt projection remain separate later milestones.
-- CP-044 still leaves `TPROXY_TELEMT_API_URL`, current compose topology and quota reconciliation targeting one global Telemt service.
+- CP-045 still leaves `TPROXY_TELEMT_API_URL`, current compose topology and quota reconciliation targeting one global Telemt service.
 - Relay records are schema-readiness metadata only; no Iran Relay tunnel runtime exists yet.
 - Existing Web Panel remains server-rendered/minimal; do not introduce a frontend framework for isolated management surfaces.
 - The current user identity schema does not store Telegram username, Node/Sponsor assignment or general last activity; User surfaces must expose absence rather than infer those roadmap fields.
@@ -173,7 +185,9 @@ Roadmap requires configurable daily/weekly caps, cooldowns, blacklist and suspic
 - CP-043 publication temporarily exposed partial fast-forward commits `4991971c...` and `7f7118cf...`; final coherent candidate `5f513acd...` repaired the milestone by fast-forward only. CI `34541388012` PASS across full Go and installer/Docker/Telemt E2E validation.
 - CP-043 promotion docs commit `d1587d80...` CI `34541753619` PASS.
 - CP-044 candidate `64dece67...` CI `34541946964` PASS on the first candidate; full Go and installer/Docker/Telemt E2E validation succeeded with no repair commit required.
+- CP-044 promotion docs commit `8cd4bb75...` CI `34542199493` PASS.
+- CP-045 candidate `e7ac0ccd...` CI `34542385124` PASS on the first candidate; full Go and installer/Docker/Telemt E2E validation succeeded with no repair commit required.
 
 ## Current next action
 
-Verify the CP-044 promotion docs-head CI. Then implement only Stage 11C: authenticated Admin API for the already-existing Start Gift byte setting. Keep existing Credit Buckets immutable, user-specific mutations, Telegram/Bot content, reward issuance, unresolved anti-abuse policy, Node runtime probing, multi-Telemt routing and installer/compose behavior unchanged.
+Verify the CP-045 promotion docs-head CI. Then implement only Stage 11D: authenticated Web Panel Start Gift settings surface over the CP-045 typed API, preserving exact int64 values and historical Credit Buckets. Keep Bot content/token editing, user-specific mutations, reward issuance, unresolved anti-abuse policy, Node runtime probing, multi-Telemt routing and installer/compose behavior unchanged.
