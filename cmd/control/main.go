@@ -96,7 +96,7 @@ func run(logger *slog.Logger) error {
 		}
 	}
 
-	api := httpapi.NewWithProxyServices(db, httpapi.Options{CookieSecure: cfg.CookieSecure}, proxyClient, quotaRunner)
+	api := httpapi.NewWithProxyServicesAndForcedJoin(db, httpapi.Options{CookieSecure: cfg.CookieSecure}, proxyClient, quotaRunner)
 	var handler http.Handler = api.Handler()
 	if cfg.BotTokenFile != "" {
 		if proxyClient == nil || quotaRunner == nil {

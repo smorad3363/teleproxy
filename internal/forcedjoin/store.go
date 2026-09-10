@@ -3,25 +3,33 @@ package forcedjoin
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/mattn/go-sqlite3"
+)
+
+var (
+	ErrNotFound = errors.New("forced join channel not found")
+	ErrConflict = errors.New("forced join channel already exists")
 )
 
 type Channel struct {
-	ID          int64
-	ChatRef     string
-	DisplayName string
-	JoinURL     string
-	Enabled     bool
-	Required    bool
-	Position    int
-	CustomText  string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID          int64     `json:"id"`
+	ChatRef     string    `json:"chat_ref"`
+	DisplayName string    `json:"display_name"`
+	JoinURL     string    `json:"join_url"`
+	Enabled     bool      `json:"enabled"`
+	Required    bool      `json:"required"`
+	Position    int       `json:"position"`
+	CustomText  string    `json:"custom_text"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 type CreateChannel struct {
@@ -41,33 +49,21 @@ func Create(ctx context.Context, db *sql.DB, input CreateChannel, now time.Time)
 	if now.IsZero() {
 		return Channel{}, fmt.Errorf("forced join time is required")
 	}
-	chatRef, err := normalizeChatRef(input.ChatRef)
+	normalized, err := normalizeChannelInput(input)
 	if err != nil {
 		return Channel{}, err
-	}
-	displayName := strings.TrimSpace(input.DisplayName)
-	if !utf8.ValidString(displayName) || len(displayName) < 1 || len(displayName) > 128 {
-		return Channel{}, fmt.Errorf("forced join display name must contain between 1 and 128 UTF-8 bytes")
-	}
-	joinURL, err := normalizeJoinURL(input.JoinURL)
-	if err != nil {
-		return Channel{}, err
-	}
-	if input.Position < 0 || input.Position > 1000000 {
-		return Channel{}, fmt.Errorf("forced join position is out of range")
-	}
-	customText := input.CustomText
-	if !utf8.ValidString(customText) || len(customText) > 1024 {
-		return Channel{}, fmt.Errorf("forced join custom text must contain at most 1024 UTF-8 bytes")
 	}
 	now = now.UTC().Truncate(time.Second)
 	result, err := db.ExecContext(ctx, `
 INSERT INTO forced_join_channels(
     chat_ref, display_name, join_url, enabled, required, position, custom_text, created_at, updated_at
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		chatRef, displayName, joinURL, boolInt(input.Enabled), boolInt(input.Required), input.Position,
-		customText, now.Unix(), now.Unix(),
+		normalized.ChatRef, normalized.DisplayName, normalized.JoinURL, boolInt(normalized.Enabled), boolInt(normalized.Required), normalized.Position,
+		normalized.CustomText, now.Unix(), now.Unix(),
 	)
+	if isUniqueConstraint(err) {
+		return Channel{}, ErrConflict
+	}
 	if err != nil {
 		return Channel{}, fmt.Errorf("create forced join channel: %w", err)
 	}
@@ -76,6 +72,38 @@ INSERT INTO forced_join_channels(
 		return Channel{}, fmt.Errorf("read forced join channel id: %w", err)
 	}
 	return getByID(ctx, db, id)
+}
+
+func ValidateChannelInput(input CreateChannel) error {
+	_, err := normalizeChannelInput(input)
+	return err
+}
+
+func normalizeChannelInput(input CreateChannel) (CreateChannel, error) {
+	chatRef, err := normalizeChatRef(input.ChatRef)
+	if err != nil {
+		return CreateChannel{}, err
+	}
+	displayName := strings.TrimSpace(input.DisplayName)
+	if !utf8.ValidString(displayName) || len(displayName) < 1 || len(displayName) > 128 {
+		return CreateChannel{}, fmt.Errorf("forced join display name must contain between 1 and 128 UTF-8 bytes")
+	}
+	joinURL, err := normalizeJoinURL(input.JoinURL)
+	if err != nil {
+		return CreateChannel{}, err
+	}
+	if input.Position < 0 || input.Position > 1000000 {
+		return CreateChannel{}, fmt.Errorf("forced join position is out of range")
+	}
+	customText := input.CustomText
+	if !utf8.ValidString(customText) || len(customText) > 1024 {
+		return CreateChannel{}, fmt.Errorf("forced join custom text must contain at most 1024 UTF-8 bytes")
+	}
+	input.ChatRef = chatRef
+	input.DisplayName = displayName
+	input.JoinURL = joinURL
+	input.CustomText = customText
+	return input, nil
 }
 
 func ListRequired(ctx context.Context, db *sql.DB) ([]Channel, error) {
@@ -192,6 +220,17 @@ func normalizeJoinURL(value string) (string, error) {
 		return "", fmt.Errorf("forced join URL is invalid")
 	}
 	return parsed.String(), nil
+}
+
+func isUniqueConstraint(err error) bool {
+	if err == nil {
+		return false
+	}
+	var sqliteErr sqlite3.Error
+	if !errors.As(err, &sqliteErr) {
+		return false
+	}
+	return sqliteErr.ExtendedCode == sqlite3.ErrConstraintUnique || sqliteErr.ExtendedCode == sqlite3.ErrConstraintPrimaryKey
 }
 
 func boolInt(value bool) int {
