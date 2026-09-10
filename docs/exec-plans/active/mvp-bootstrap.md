@@ -3,7 +3,7 @@
 Status: ACTIVE
 Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
-Latest verified checkpoint: `523d13000bd26f1eeb1f4bc3ad6a40a3ca0ea57b`
+Latest verified checkpoint: `989c32c234127e93879719a566046144201e6d18`
 
 ## Recovery contract
 
@@ -40,16 +40,16 @@ Non-negotiable architecture: SQLite WAL/NORMAL is authoritative Control Plane st
 - CP-026 membership-gated Telegram start: `dd0656d8ea1725ab4a9de68899ae474031590ee2`, CI `34480254706` PASS.
 - CP-027 Forced Join authenticated Admin CRUD API: `bad15c07f439ff3d90945b08fb75eb9690160c58`, CI `34482353102` PASS.
 - CP-028 Forced Join manual recheck UX: `523d13000bd26f1eeb1f4bc3ad6a40a3ca0ea57b`, CI `34490204497` PASS.
+- CP-029 Referral identity + pending attribution domain: `989c32c234127e93879719a566046144201e6d18`, CI `34497165310` PASS.
 
-### CP-028 implemented
+### CP-029 implemented
 
-- missing-channel Bot responses now use inline keyboards with one validated Telegram join URL button per missing channel and a fixed `forced_join_recheck` callback button; callback data contains no user/resource/entitlement or secret data and stays below Telegram's 64-byte limit.
-- Bot client supports bounded `sendMessage` with inline keyboard and `answerCallbackQuery`; transport/network/API failures reuse sanitized error codes and never expose token-bearing Bot API URLs or upstream response descriptions.
-- `Update` parses only the callback-query fields required for manual recheck.
-- recheck accepts only the fixed callback token from a non-bot user, with an existing Teleproxy identity and a private callback message whose `chat.id` equals `callback_query.from.id`; forged/malformed/group/inline-only/unknown-user contexts perform no gift/provisioning mutation.
-- recheck reuses the CP-026 Forced Join gate and the idempotent `EnsureStartGift`/CP-023 provisioning path; repeated callbacks cannot create a second start gift or duplicate provisioning ownership.
-- handled callbacks are answered on success, still-missing membership, and membership/application-error paths so Telegram clients do not remain loading; callback application errors return webhook success and remain fail-closed for entitlement so users retry explicitly rather than through ambiguous Telegram update replay.
-- ordinary blocked `/start` also renders join/recheck controls; legacy senders without inline-keyboard capability retain the prior plain-text fallback.
+- additive migration `009_referrals.sql` adds one stable unique referral code per Telegram user and at most one referral attribution per invitee, with foreign keys, status constraints, an explicit self-referral constraint, and an inviter/status index.
+- referral codes are generated from cryptographic randomness, encoded with bounded URL-safe characters, persisted behind a DB unique constraint, and remain stable under replay/concurrent `EnsureCode` calls.
+- `AttributeNewInvitee` accepts only a newly-created `telegramuser.ResolveResult`, persists `pending` attribution before any Forced Join gap, returns typed safe outcomes for invalid/unknown/self/not-new/existing cases, and never changes an existing invitee attribution on replay.
+- read primitives expose the stable code, invitee attribution, and rewarded referral count; the count includes only `rewarded`, excluding `pending` and `rejected`.
+- D1A creates no referral Credit Bucket, performs no reward eligibility transition, and changes no Bot, Forced Join, HTTP, provisioning, or Telemt behavior.
+- migration upgrade/rerun, format, vet, full Go tests, installer tests, Docker prerequisites, and Telemt E2E/rerun passed in CI `34497165310`.
 
 ## Supplied source hashes
 
@@ -68,30 +68,26 @@ Telemt `3.5.7`, upstream commit `4ca7418442478cd92f9e861c21977a81b249efc8`.
 
 ## Active stage
 
-### Stage 7D1A — Referral identity + pending attribution domain — ACTIVE
+### Stage 7D1B — `/start` referral resolution wiring — ACTIVE
 
-Roadmap basis: `/start` resolves a referral code after creating a new Telegram user and before Forced Join; a valid referral requires a new invitee, no prior reward for that invitee, no self-referral, anti-abuse approval, and completed Forced Join. The roadmap also requires a unique constraint per invitee, idempotent reward creation, referral history, and a user-visible referral link/count.
+Roadmap basis: `/start` resolves a referral payload after Telegram identity creation and before Forced Join. The pending attribution must therefore be durable before a blocked user leaves the normal `/start` path, while callback data remains fixed and contains no referral identity. The user-facing start result should expose the user's stable referral link/count without issuing referral credit in this milestone.
 
 Scope only:
-- additive migration for one stable opaque referral code per Telegram user and at most one referral attribution per invitee
-- generate referral codes with cryptographic randomness, bounded URL-safe characters, and a DB unique constraint; never derive security-sensitive authority from the code
-- attribution records inviter/invitee and starts as `pending`; this milestone creates no Credit Bucket and does not decide reward eligibility
-- accept attribution only for a newly resolved invitee; reject self-referral and unknown/invalid codes with typed safe outcomes; replay must never change an existing invitee attribution
-- preserve referral history/status fields needed for later `pending -> rewarded/rejected` transitions without implementing those transitions yet
-- expose read primitives for referral code, attribution, and inviter referral count suitable for later Bot response wiring
-- no reward issuance, Forced Join integration, caps/cooldowns/blacklist scoring, admin UI/API, Bot callback changes, or sponsor work in D1A
+- parse only the bounded referral payload accepted by the existing Telegram `/start` command path; ordinary `/start` without a payload remains unchanged
+- after `telegramuser.Resolve`, call the CP-029 attribution primitive before Forced Join so a newly-created invitee can retain pending attribution across membership recheck
+- only newly-created invitees can gain attribution; invalid, unknown, self, replay, or existing-user referral payloads must not overwrite attribution or grant entitlement
+- reuse the fixed non-secret Forced Join callback; never carry referral code, inviter identity, Telegram identity, or reward authority in callback data
+- expose a stable referral code/link and rewarded referral count using a repository-supported Bot identity source; do not invent or persist a second Bot token/secret
+- keep referral reward issuance, anti-abuse eligibility transitions, caps/cooldowns/blacklist scoring, admin UI/API, and sponsor work out of D1B
 
 Acceptance:
-- one code per inviter and code uniqueness are enforced under replay/concurrency
-- one attribution per invitee is enforced by schema/domain; self-referral cannot be persisted
-- only `ResolveResult.Created=true` callers can create a new attribution through the public API
-- invalid/unknown referral payloads cannot mutate attribution state
-- pending attribution survives the Forced Join gap so a later callback can finalize eligibility without carrying referral data in callback_data
-- referral count excludes pending/rejected records until later reward completion semantics are implemented
-- migration upgrade/rerun, format/vet/test and Docker/Telemt E2E remain green
-
-### Stage 7D1B — `/start` referral resolution wiring — PENDING
-Parse the roadmap referral payload before Forced Join, persist pending attribution only for a newly-created invitee, keep callback data fixed/non-secret, and surface the user's stable referral link/count without issuing a reward yet.
+- referral payload is resolved only after identity creation and before Forced Join
+- a newly-created blocked invitee retains one pending attribution, and later recheck does not need referral data in callback data
+- invalid/unknown/self/not-new/replayed payloads cannot change attribution or grant credit/provisioning
+- successful start can surface a stable user referral link/code and rewarded count without issuing referral reward
+- no referral Credit Bucket is created by D1B
+- existing Forced Join/start gift/provisioning idempotency remains intact
+- format/vet/test and Docker/Telemt E2E remain green
 
 ### Stage 7D2 — Referral eligibility + idempotent reward Credit Bucket — PENDING
 Finalize pending referral only after Forced Join/anti-abuse checks. Implement exactly-once reward Credit Bucket, configurable byte amount/expiry and typed rejected reasons. The supplied roadmap states a default `2GB / 14 days` referral reward but does not explicitly say whether that bucket belongs to inviter, invitee, or both; resolve this from repository/product evidence before issuing credits rather than silently guessing.
@@ -110,6 +106,7 @@ Add the roadmap-required configurable caps/cooldowns/blacklist/history surfaces 
 - Forced Join management reuses authoritative domain validation.
 - Manual recheck callback data is fixed/non-secret; authoritative identity always comes from the Telegram update, not callback data.
 - Referral attribution must be durable before the Forced Join gap because recheck callback data intentionally carries no referral identity.
+- Referral credit recipient semantics remain unresolved for D2; do not issue referral rewards until repository/product evidence resolves inviter versus invitee versus both.
 
 ## Validation/failure log
 
@@ -128,7 +125,8 @@ Add the roadmap-required configurable caps/cooldowns/blacklist/history surfaces 
 - C2A produced two unattached mismatched Git blobs during transfer checks; neither was referenced by a tree/branch. Final six published SHAs matched local staging and CI `34482353102` passed.
 - C2B was published through seven coherent sequential fast-forward commits after an accidental direct `create_file` publication of `interactive.go`; no reset/force was used. Net diff from CP-027 contains exactly seven Telegram Bot files, and final CI `34490204497` passed.
 - C2B isolated local tests covered interactive transport/webhook behavior; production compile used type-compatible stubs because local Go is 1.23.2 while repository `go.mod` is Go 1.26. GitHub CI is authoritative for the full suite.
+- D1A was published as small sequential fast-forward commits. Intermediate schema commit `1efded4b6b583678637b3949b152bc2ab38c82ec` had Format/Vet PASS but `go test` failure in CI `34497018395`; GitHub connector did not expose the job log text, so no unsupported exact root-cause claim is recorded. Subsequent migration-test update and D1A tests produced final candidate `989c32c234127e93879719a566046144201e6d18`, whose full CI `34497165310` passed including Docker/Telemt E2E/rerun.
 
 ## Current next action
 
-Implement only Stage 7D1A from CP-028. Do not wire referral payloads into `/start` or issue any referral reward until D1A is separately verified.
+Implement only Stage 7D1B from CP-029. First inspect the current Bot `/start` parser/response path and repository-supported Bot identity source needed to construct a referral link. Do not issue referral rewards until D2 and do not guess unresolved reward-recipient semantics.
