@@ -3,7 +3,7 @@
 Status: ACTIVE
 Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
-Latest verified checkpoint: `5f96316f7ea58581dce0d8f8a312518fe595a42b`
+Latest verified checkpoint: `06dc77e0b18517179e0dea937a0612ed54bc356e`
 
 ## Recovery contract
 
@@ -43,17 +43,17 @@ Non-negotiable architecture: SQLite WAL/NORMAL is authoritative Control Plane st
 - CP-029 Referral identity + pending attribution domain: `989c32c234127e93879719a566046144201e6d18`, CI `34497165310` PASS.
 - CP-030 `/start` referral resolution wiring: `caf9bffd275ed2418b540773042875b8fe2d23fa`, CI `34497967471` PASS.
 - CP-031 Referral eligibility persistence primitives: `5f96316f7ea58581dce0d8f8a312518fe595a42b`, CI `34505475099` PASS.
+- CP-032 Referral reward configuration primitives: `06dc77e0b18517179e0dea937a0612ed54bc356e`, CI `34505999351` PASS.
 
-### CP-031 implemented
+### CP-032 implemented
 
-- additive migration `010_referral_eligibility.sql` adds nullable `eligible_at` without changing the existing `pending/rewarded/rejected` status contract; v9 pending rows upgrade unchanged and migration reruns preserve eligibility state.
-- `ApproveEligibility` records one durable eligibility approval while leaving the attribution `pending`; approval therefore does not imply reward issuance and creates no Credit Bucket.
-- `RejectEligibility` performs a terminal `rejected` transition with typed server-side reasons for anti-abuse, daily/weekly caps, cooldown, blacklist, and suspicious signals; invalid reasons do not mutate state.
-- eligibility approval/rejection are replay-safe and race-safe: only one mutation can win from an unapproved pending attribution, and later replay returns the persisted state rather than rewriting it.
-- `RewardedCount` remains based only on `status='rewarded'`; an approved-but-unrewarded attribution is deliberately excluded.
-- D2A changes no Bot/Forced Join/API/provisioning/Telemt behavior and creates no referral reward Credit Bucket because reward-recipient semantics remain unresolved.
-- the D2A diff from CP-030 docs head contains exactly seven files: referral migration/domain/tests plus database migration regression coverage.
-- format, vet, full Go tests, installer syntax/unit tests, Docker prerequisites, and Telemt E2E/rerun all passed in CI `34505475099`.
+- backend settings expose referral reward bytes and expiry days using the existing SQLite `settings` table, with roadmap defaults `2_000_000_000` bytes and `14` days.
+- the default byte value follows the repository's existing decimal convention where the `100MB` start gift is `100_000_000` bytes; no quota-unit convention was changed.
+- `SetReferralReward` writes both values in one SQLite transaction; a failure on the second write rolls back the first, preventing split configuration state.
+- normal and transaction-scoped readers are available for later reward settlement; missing keys use defaults, while corrupt/non-positive stored values fail closed.
+- configuration reads/writes do not touch referral attribution or Credit Bucket state, choose a reward recipient, or mark anything rewarded.
+- D2B adds exactly two files under `internal/settings`; no migration was required because the generic settings table already exists.
+- format, vet, full Go tests, installer syntax/unit tests, Docker prerequisites, and Telemt E2E/rerun all passed in CI `34505999351`.
 
 ## Supplied source hashes
 
@@ -72,38 +72,37 @@ Telemt `3.5.7`, upstream commit `4ca7418442478cd92f9e861c21977a81b249efc8`.
 
 ## Active stage
 
-### Stage 7D2B — Referral reward configuration primitives — ACTIVE
+### Stage 7D2B2 — Authenticated Web Admin referral reward settings API — ACTIVE
 
-Roadmap-confirmed behavior:
-- default referral reward is `2GB / 14 days`;
-- reward amount and expiry must be configurable from Web Admin and Bot Admin;
-- Credit Buckets remain the reward/quota source of truth.
+Roadmap-confirmed behavior: referral reward amount and reward expiry are settings and must be configurable from Web Admin and Bot Admin.
 
 Scope only:
-- add backend settings primitives for referral reward bytes and expiry duration, following the existing generic `settings` table pattern and fail-closed handling of corrupt stored values;
-- use the repository's existing decimal-byte convention (`100MB = 100_000_000` bytes) consistently for the roadmap's `2GB` default, without changing existing quota semantics;
-- validate positive bounded values and provide transaction-safe read helpers needed by later exactly-once reward issuance;
-- do not choose a reward recipient, create a referral Credit Bucket, mark an attribution `rewarded`, wire Bot/Web Admin settings UI, or bypass anti-abuse/Forced Join eligibility.
+- expose authenticated GET/PUT JSON endpoints for the CP-032 referral reward settings through the existing Admin session + CSRF protection pattern;
+- GET is read-only and no-store; PUT requires valid session and CSRF, bounded JSON body, no unknown fields, and positive values;
+- return safe typed problems for malformed/invalid requests without exposing storage internals;
+- wire routes into the existing production Control Plane constructor used by `cmd/control`;
+- no dashboard UI, Bot Admin UI, reward issuance, recipient choice, anti-abuse policy invention, or Credit Bucket mutation.
 
 Acceptance:
-- absent settings resolve to `2_000_000_000` bytes and `14 days`;
-- configured values round-trip and corrupt/invalid storage fails closed;
-- no migration is needed because the generic settings table already exists;
-- no referral attribution or Credit Bucket is mutated by reading/writing configuration;
+- unauthenticated GET/PUT fail with existing Admin API authentication behavior;
+- state-changing PUT fails without valid CSRF;
+- default GET returns `2_000_000_000 / 14`; valid PUT round-trips through the authoritative settings store;
+- malformed/unknown/oversized/non-positive JSON cannot mutate settings;
+- no referral attribution or credit state changes;
 - format/vet/test and Docker/Telemt E2E remain green.
 
 ### Stage 7D2C — Exactly-once referral reward issuance — BLOCKED ON PRODUCT SEMANTICS
 
 Unresolved product contract:
 - the supplied English and Persian roadmaps define reward amount/expiry and invitee eligibility conditions but do not specify who receives the reward Credit Bucket: inviter, invitee, or both.
-- repository issue/code search found no product decision resolving that recipient as of CP-031.
+- repository issue/code search found no product decision resolving that recipient as of CP-032.
 - do not infer a recipient from common referral conventions. Reward issuance remains blocked until this contract is explicit.
 
 Once resolved, implement exactly-once Credit Bucket creation from an approved attribution, atomically transition it to `rewarded`, preserve idempotency under crash/replay/concurrency, and enforce Forced Join plus anti-abuse before approval.
 
-### Stage 7D3 — Minimum anti-abuse controls + admin configuration/history — PENDING
+### Stage 7D3 — Minimum anti-abuse controls + admin configuration/history — PRODUCT DETAILS PARTIAL
 
-Add the roadmap-required configurable daily/weekly caps, cooldown, blacklist, suspicious-score/history and admin surfaces in small verified milestones. Suspicious scoring remains explicit and server-side, never a client-only decision.
+The roadmap requires configurable daily/weekly reward caps, cooldowns, blacklist, suspicious-score mechanism, referral history, and admin mutation audit log. It does not specify cap scope/default values, cooldown semantics/default, blacklist subject, or suspicious-score inputs/threshold. Do not silently invent those product semantics; implement only evidence-backed pieces in small verified milestones.
 
 ## Important decisions
 
@@ -119,6 +118,7 @@ Add the roadmap-required configurable daily/weekly caps, cooldown, blacklist, su
 - Production referral links reuse configured `TPROXY_BOT_USERNAME`; no extra token or runtime identity source is needed.
 - Eligibility approval is distinct from reward settlement: `pending + eligible_at` is approved but not rewarded.
 - Referral credit recipient semantics remain unresolved; do not issue referral rewards until repository/product evidence resolves inviter versus invitee versus both.
+- Anti-abuse controls are roadmap-required, but unspecified scope/default semantics are not inferred.
 
 ## Validation/failure log
 
@@ -141,7 +141,9 @@ Add the roadmap-required configurable daily/weekly caps, cooldown, blacklist, su
 - D1B candidate `caf9bffd275ed2418b540773042875b8fe2d23fa` passed its first final full CI `34497967471`: Format/Vet/Test, installer syntax/unit, Docker prerequisites, and Telemt E2E/rerun all succeeded.
 - CP-030 docs promotion commit `2ad01cb8bce7b6d489c62e8594cebe99ea1774cf` also passed full CI `34498484861`.
 - D2A was published atomically as one seven-file commit `5f96316f7ea58581dce0d8f8a312518fe595a42b`; full CI `34505475099` passed on the first candidate, including Docker/Telemt E2E/rerun.
+- CP-031 docs promotion commit `9f35a3ece67dd32717af1803a7b3c0fac03624d5` passed full CI `34505782176`.
+- D2B candidate `06dc77e0b18517179e0dea937a0612ed54bc356e` added only the reward settings primitives/tests and passed full CI `34505999351` on the first candidate.
 
 ## Current next action
 
-Implement only Stage 7D2B from CP-031. Add referral reward amount/expiry backend settings with roadmap defaults and repository-consistent byte units. Do not issue a Credit Bucket or select a reward recipient. After D2B is separately verified, proceed to minimum anti-abuse milestones while keeping D2C blocked until recipient semantics become explicit.
+Implement only Stage 7D2B2 from CP-032: authenticated Web Admin GET/PUT for referral reward settings using existing Admin API auth/CSRF/body-bound patterns. Do not issue rewards or infer anti-abuse defaults/scopes. Keep Stage 7D2C blocked until reward-recipient semantics are explicit.
