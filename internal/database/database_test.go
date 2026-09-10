@@ -41,8 +41,8 @@ func TestOpenAppliesSQLiteInvariantsAndMigrations(t *testing.T) {
 	if err := db.QueryRow("SELECT COUNT(*) FROM schema_migrations").Scan(&migrations); err != nil {
 		t.Fatalf("count migrations: %v", err)
 	}
-	if migrations != 7 {
-		t.Fatalf("migration count = %d, want 7", migrations)
+	if migrations != 8 {
+		t.Fatalf("migration count = %d, want 8", migrations)
 	}
 
 	if err := Migrate(ctx, db); err != nil {
@@ -51,8 +51,8 @@ func TestOpenAppliesSQLiteInvariantsAndMigrations(t *testing.T) {
 	if err := db.QueryRow("SELECT COUNT(*) FROM schema_migrations").Scan(&migrations); err != nil {
 		t.Fatalf("count migrations after rerun: %v", err)
 	}
-	if migrations != 7 {
-		t.Fatalf("migration count after rerun = %d, want 7", migrations)
+	if migrations != 8 {
+		t.Fatalf("migration count after rerun = %d, want 8", migrations)
 	}
 }
 
@@ -122,8 +122,8 @@ INSERT INTO credit_buckets(
 	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM schema_migrations").Scan(&migrationCount); err != nil {
 		t.Fatal(err)
 	}
-	if migrationCount != 7 {
-		t.Fatalf("migration count = %d, want 7", migrationCount)
+	if migrationCount != 8 {
+		t.Fatalf("migration count = %d, want 8", migrationCount)
 	}
 	var username string
 	if err := db.QueryRowContext(ctx, "SELECT username FROM proxy_users WHERE id = ?", proxyUserID).Scan(&username); err != nil || username != "legacy" {
@@ -158,6 +158,12 @@ INSERT INTO proxy_user_provisioning(
 	}
 	if digestLength != 32 {
 		t.Fatalf("provisioning digest length = %d, want 32", digestLength)
+	}
+	if _, err := db.ExecContext(ctx, `
+INSERT INTO forced_join_channels(
+    chat_ref, display_name, join_url, enabled, required, position, custom_text, created_at, updated_at
+) VALUES ('@legacy_gate', 'Legacy gate', 'https://t.me/legacy_gate', 1, 1, 0, '', 200, 200)`); err != nil {
+		t.Fatalf("new forced_join_channels table is unusable: %v", err)
 	}
 }
 
