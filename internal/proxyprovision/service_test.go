@@ -3,7 +3,6 @@ package proxyprovision
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"path/filepath"
 	"sync"
