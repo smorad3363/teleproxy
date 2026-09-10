@@ -40,7 +40,7 @@ printed1=$(sudo awk -F= '$1 == "TPROXY_CREDENTIAL_PRINTED" {print $2}' "$state")
 grep -Eq '^Initial Password: [0-9a-f]{48}$' "$OUT1"
 [[ ! -e "$INSTALL_DIR/secrets/admin-bootstrap-password" ]]
 curl -fsS --max-time 3 "http://127.0.0.1:${port1}/readyz" >/dev/null
-"$TPROXY_BIN" panel | grep -F "http://127.0.0.1:${port1}" >/dev/null
+TPROXY_INSTALL_DIR="$INSTALL_DIR" "$TPROXY_BIN" panel | grep -F "http://127.0.0.1:${port1}" >/dev/null
 
 run_install "$OUT2"
 port2=$(sudo awk -F= '$1 == "TPROXY_PANEL_PORT" {print $2}' "$state")
