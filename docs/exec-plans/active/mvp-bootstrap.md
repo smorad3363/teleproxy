@@ -3,7 +3,7 @@
 Status: ACTIVE
 Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
-Latest verified checkpoint: `06dc77e0b18517179e0dea937a0612ed54bc356e`
+Latest verified checkpoint: `7fd1143723532a9d9a7ff5591c914b966b7e129f`
 
 ## Recovery contract
 
@@ -44,16 +44,16 @@ Non-negotiable architecture: SQLite WAL/NORMAL is authoritative Control Plane st
 - CP-030 `/start` referral resolution wiring: `caf9bffd275ed2418b540773042875b8fe2d23fa`, CI `34497967471` PASS.
 - CP-031 Referral eligibility persistence primitives: `5f96316f7ea58581dce0d8f8a312518fe595a42b`, CI `34505475099` PASS.
 - CP-032 Referral reward configuration primitives: `06dc77e0b18517179e0dea937a0612ed54bc356e`, CI `34505999351` PASS.
+- CP-033 Authenticated Web Admin referral reward settings API: `7fd1143723532a9d9a7ff5591c914b966b7e129f`, CI `34506809233` PASS.
 
-### CP-032 implemented
+### CP-033 implemented
 
-- backend settings expose referral reward bytes and expiry days using the existing SQLite `settings` table, with roadmap defaults `2_000_000_000` bytes and `14` days.
-- the default byte value follows the repository's existing decimal convention where the `100MB` start gift is `100_000_000` bytes; no quota-unit convention was changed.
-- `SetReferralReward` writes both values in one SQLite transaction; a failure on the second write rolls back the first, preventing split configuration state.
-- normal and transaction-scoped readers are available for later reward settlement; missing keys use defaults, while corrupt/non-positive stored values fail closed.
-- configuration reads/writes do not touch referral attribution or Credit Bucket state, choose a reward recipient, or mark anything rewarded.
-- D2B adds exactly two files under `internal/settings`; no migration was required because the generic settings table already exists.
-- format, vet, full Go tests, installer syntax/unit tests, Docker prerequisites, and Telemt E2E/rerun all passed in CI `34505999351`.
+- authenticated `GET /api/referral/reward-settings` exposes the CP-032 settings with `Cache-Control: no-store`; unauthenticated requests reuse the existing `AUTH_REQUIRED` Admin API contract.
+- authenticated `PUT /api/referral/reward-settings` requires the existing session-derived `X-CSRF-Token`, accepts only bounded JSON with known `bytes`/`expiry_days` fields, rejects non-positive values, and round-trips through the authoritative settings store.
+- malformed, unknown-field, oversized, and invalid-value requests return safe typed problems and cannot mutate the stored reward configuration.
+- the API is wired through the existing production Control Plane constructor; it introduces no Telemt/Bot dependency and creates no referral attribution or Credit Bucket mutation.
+- the final D2B2 net diff contains only route registration plus the referral settings HTTP handler/tests.
+- candidate `7fd1143723532a9d9a7ff5591c914b966b7e129f` passed Format, Vet, full Go tests, installer syntax/unit tests, Docker prerequisites, and Telemt E2E/rerun in CI `34506809233`.
 
 ## Supplied source hashes
 
@@ -72,37 +72,35 @@ Telemt `3.5.7`, upstream commit `4ca7418442478cd92f9e861c21977a81b249efc8`.
 
 ## Active stage
 
-### Stage 7D2B2 — Authenticated Web Admin referral reward settings API — ACTIVE
+### Stage 7D3A — Referral history read model + authenticated Admin API — ACTIVE
 
-Roadmap-confirmed behavior: referral reward amount and reward expiry are settings and must be configurable from Web Admin and Bot Admin.
+Roadmap basis: referral history is an explicit minimum anti-abuse/admin requirement. Existing attribution data already contains the inviter/invitee relationship, status, eligibility/rejection/finalization timestamps and rejection reason, so a read-only history surface does not require inventing reward-recipient or scoring semantics.
 
 Scope only:
-- expose authenticated GET/PUT JSON endpoints for the CP-032 referral reward settings through the existing Admin session + CSRF protection pattern;
-- GET is read-only and no-store; PUT requires valid session and CSRF, bounded JSON body, no unknown fields, and positive values;
-- return safe typed problems for malformed/invalid requests without exposing storage internals;
-- wire routes into the existing production Control Plane constructor used by `cmd/control`;
-- no dashboard UI, Bot Admin UI, reward issuance, recipient choice, anti-abuse policy invention, or Credit Bucket mutation.
+- add a bounded deterministic referral history read model over authoritative `referral_attributions`, joining existing Telegram identities only for administrator-facing identification;
+- expose authenticated read-only Admin JSON listing with stable newest-first pagination based on attribution ID and an optional bounded page size;
+- preserve status/rejection/eligibility/finalization data exactly as stored; no derived abuse score or inferred reward recipient;
+- return no referral code authority or secrets and perform no mutation;
+- no dashboard UI, Bot Admin UI, reward issuance, caps/cooldowns/blacklist policy semantics, or audit mutation work in D3A.
 
 Acceptance:
-- unauthenticated GET/PUT fail with existing Admin API authentication behavior;
-- state-changing PUT fails without valid CSRF;
-- default GET returns `2_000_000_000 / 14`; valid PUT round-trips through the authoritative settings store;
-- malformed/unknown/oversized/non-positive JSON cannot mutate settings;
-- no referral attribution or credit state changes;
+- history is newest-first and pagination cannot skip/duplicate rows in a static dataset;
+- each row identifies inviter/invitee Telegram users plus persisted attribution state/timestamps;
+- unauthenticated access fails with existing Admin API auth behavior; authenticated reads are `no-store`;
+- invalid cursor/limit inputs fail safely and do not query unbounded data;
+- history reads create no Credit Bucket and mutate no attribution/settings state;
 - format/vet/test and Docker/Telemt E2E remain green.
 
 ### Stage 7D2C — Exactly-once referral reward issuance — BLOCKED ON PRODUCT SEMANTICS
 
 Unresolved product contract:
 - the supplied English and Persian roadmaps define reward amount/expiry and invitee eligibility conditions but do not specify who receives the reward Credit Bucket: inviter, invitee, or both.
-- repository issue/code search found no product decision resolving that recipient as of CP-032.
+- repository issue/code search found no product decision resolving that recipient as of CP-033.
 - do not infer a recipient from common referral conventions. Reward issuance remains blocked until this contract is explicit.
 
-Once resolved, implement exactly-once Credit Bucket creation from an approved attribution, atomically transition it to `rewarded`, preserve idempotency under crash/replay/concurrency, and enforce Forced Join plus anti-abuse before approval.
+### Stage 7D3B — Remaining minimum anti-abuse controls — PRODUCT DETAILS PARTIAL
 
-### Stage 7D3 — Minimum anti-abuse controls + admin configuration/history — PRODUCT DETAILS PARTIAL
-
-The roadmap requires configurable daily/weekly reward caps, cooldowns, blacklist, suspicious-score mechanism, referral history, and admin mutation audit log. It does not specify cap scope/default values, cooldown semantics/default, blacklist subject, or suspicious-score inputs/threshold. Do not silently invent those product semantics; implement only evidence-backed pieces in small verified milestones.
+The roadmap requires configurable daily/weekly reward caps, cooldowns, blacklist, suspicious-score mechanism and admin mutation audit log. It does not specify cap scope/default values, cooldown semantics/default, blacklist subject, or suspicious-score inputs/threshold. Do not silently invent those product semantics; implement only evidence-backed pieces in small verified milestones.
 
 ## Important decisions
 
@@ -136,14 +134,15 @@ The roadmap requires configurable daily/weekly reward caps, cooldowns, blacklist
 - CP-025 pre-publish compile caught unsupported `testing.T.Context`; repaired before branch publication.
 - C2A produced two unattached mismatched Git blobs during transfer checks; neither was referenced by a tree/branch. Final six published SHAs matched local staging and CI `34482353102` passed.
 - C2B was published through seven coherent sequential fast-forward commits after an accidental direct `create_file` publication of `interactive.go`; no reset/force was used. Net diff from CP-027 contains exactly seven Telegram Bot files, and final CI `34490204497` passed.
-- C2B isolated local tests covered interactive transport/webhook behavior; production compile used type-compatible stubs because local Go is 1.23.2 while repository `go.mod` is Go 1.26. GitHub CI is authoritative for the full suite.
-- D1A was published as small sequential fast-forward commits. Intermediate schema commit `1efded4b6b583678637b3949b152bc2ab38c82ec` had Format/Vet PASS but `go test` failure in CI `34497018395`; subsequent migration-test update and D1A tests produced final candidate `989c32c234127e93879719a566046144201e6d18`, whose full CI `34497165310` passed including Docker/Telemt E2E/rerun.
-- D1B candidate `caf9bffd275ed2418b540773042875b8fe2d23fa` passed its first final full CI `34497967471`: Format/Vet/Test, installer syntax/unit, Docker prerequisites, and Telemt E2E/rerun all succeeded.
-- CP-030 docs promotion commit `2ad01cb8bce7b6d489c62e8594cebe99ea1774cf` also passed full CI `34498484861`.
-- D2A was published atomically as one seven-file commit `5f96316f7ea58581dce0d8f8a312518fe595a42b`; full CI `34505475099` passed on the first candidate, including Docker/Telemt E2E/rerun.
-- CP-031 docs promotion commit `9f35a3ece67dd32717af1803a7b3c0fac03624d5` passed full CI `34505782176`.
-- D2B candidate `06dc77e0b18517179e0dea937a0612ed54bc356e` added only the reward settings primitives/tests and passed full CI `34505999351` on the first candidate.
+- C2B isolated local tests covered interactive transport/webhook behavior; production compile used type-compatible stubs because local Go is 1.23.2 while repository CI is authoritative for the full suite.
+- D1A intermediate schema commit `1efded4b6b583678637b3949b152bc2ab38c82ec` had Format/Vet PASS but `go test` failure in CI `34497018395`; subsequent migration-test update and D1A tests produced final candidate `989c32c234127e93879719a566046144201e6d18`, whose full CI `34497165310` passed.
+- D1B candidate `caf9bffd275ed2418b540773042875b8fe2d23fa` passed full CI `34497967471`.
+- CP-030 docs promotion `2ad01cb8bce7b6d489c62e8594cebe99ea1774cf` passed full CI `34498484861`.
+- D2A commit `5f96316f7ea58581dce0d8f8a312518fe595a42b` passed full CI `34505475099` on the first candidate.
+- CP-031 docs promotion `9f35a3ece67dd32717af1803a7b3c0fac03624d5` passed full CI `34505782176`.
+- D2B candidate `06dc77e0b18517179e0dea937a0612ed54bc356e` passed full CI `34505999351` on the first candidate; CP-032 docs promotion `8f268d0b6cfc336e91742383d991251ac49e1e9a` passed full CI `34506301685`.
+- D2B2 initial candidate `e50d7b299bd0793ed10f8764f8113f77eae09215` failed only the Format check in CI `34506528551`; Vet/Test and installer were skipped. Byte-level comparison showed `internal/httpapi/referral_settings_test.go` did not match the locally gofmt-clean source because raw JSON literals had been transferred with extra backslashes. No production source semantics were implicated. Fast-forward repair `7fd1143723532a9d9a7ff5591c914b966b7e129f` restored the exact local test blob SHA and passed full CI `34506809233`.
 
 ## Current next action
 
-Implement only Stage 7D2B2 from CP-032: authenticated Web Admin GET/PUT for referral reward settings using existing Admin API auth/CSRF/body-bound patterns. Do not issue rewards or infer anti-abuse defaults/scopes. Keep Stage 7D2C blocked until reward-recipient semantics are explicit.
+Implement only Stage 7D3A from CP-033: bounded read-only referral history domain query plus authenticated Admin list API with deterministic ID pagination. Do not issue referral rewards or invent remaining anti-abuse policy defaults/scopes.
