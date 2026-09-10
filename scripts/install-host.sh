@@ -103,10 +103,10 @@ fi
 chown -R 10001:10001 "$DATA_DIR"
 chmod 0700 "$DATA_DIR"
 chown 0:10001 "$SECRETS_DIR"
-chmod 0750 "$SECRETS_DIR"
+chmod 0710 "$SECRETS_DIR"
 if [[ -f "$password_file" ]]; then
-  chown 0:10001 "$password_file"
-  chmod 0640 "$password_file"
+  chown 10001:10001 "$password_file"
+  chmod 0600 "$password_file"
 fi
 
 write_install_state "$STATE_FILE" prepared "$PANEL_PORT" "$PANEL_BIND" "$ADMIN_USER" "$SOURCE_REF" "$credential_printed" "$DATA_DIR" "$SECRETS_DIR" "$CONTROL_IMAGE"
