@@ -3,6 +3,7 @@ package telegrambot
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -80,6 +81,9 @@ func (a *StartApplication) Handle(ctx context.Context, update Update) (StartResp
 	if a == nil || a.db == nil {
 		return StartResponse{}, false, fmt.Errorf("Telegram start application is not configured")
 	}
+	if update.CallbackQuery != nil {
+		return a.handleForcedJoinRecheck(ctx, *update.CallbackQuery)
+	}
 	if update.Message == nil || update.Message.From == nil || update.Message.From.IsBot || update.Message.Text == "" {
 		return StartResponse{}, false, nil
 	}
@@ -107,25 +111,49 @@ func (a *StartApplication) handleGatedStart(ctx context.Context, update Update, 
 	if err != nil {
 		return StartResponse{}, true, err
 	}
-	check, err := forcedjoin.CheckRequired(ctx, a.db, a.membership, resolved.User.TelegramID)
+	return a.finishGatedIdentity(ctx, update.Message.Chat.ID, command.Payload, resolved.User, resolved.Created, now)
+}
+
+func (a *StartApplication) handleForcedJoinRecheck(ctx context.Context, query CallbackQuery) (StartResponse, bool, error) {
+	if a.membership == nil || a.provisioner == nil || query.Data != forcedJoinRecheckCallbackData {
+		return StartResponse{}, false, nil
+	}
+	if !validCallbackQueryID(query.ID) || query.From == nil || query.From.IsBot || query.From.ID <= 0 || query.Message == nil {
+		return StartResponse{}, false, nil
+	}
+	if query.Message.MessageID <= 0 || query.Message.Chat.Type != "private" || query.Message.Chat.ID == 0 || query.Message.Chat.ID != query.From.ID {
+		return StartResponse{}, false, nil
+	}
+	user, err := telegramuser.Get(ctx, a.db, query.From.ID)
+	if errors.Is(err, telegramuser.ErrNotFound) {
+		return StartResponse{}, false, nil
+	}
+	if err != nil {
+		return StartResponse{}, true, err
+	}
+	return a.finishGatedIdentity(ctx, query.Message.Chat.ID, "", user, false, a.now().UTC())
+}
+
+func (a *StartApplication) finishGatedIdentity(ctx context.Context, chatID int64, payload string, user telegramuser.User, created bool, now time.Time) (StartResponse, bool, error) {
+	check, err := forcedjoin.CheckRequired(ctx, a.db, a.membership, user.TelegramID)
 	if err != nil {
 		return StartResponse{}, true, fmt.Errorf("check Telegram forced join: %w", err)
 	}
 	if len(check.Missing) > 0 {
 		return StartResponse{
-			ChatID:          update.Message.Chat.ID,
-			TelegramID:      resolved.User.TelegramID,
-			ProxyUsername:   resolved.User.ProxyUsername,
-			Created:         resolved.Created,
-			Payload:         command.Payload,
+			ChatID:          chatID,
+			TelegramID:      user.TelegramID,
+			ProxyUsername:   user.ProxyUsername,
+			Created:         created,
+			Payload:         payload,
 			MissingChannels: startRequiredChannels(check.Missing),
 		}, true, nil
 	}
-	gift, err := telegramuser.EnsureStartGift(ctx, a.db, resolved.User.TelegramID, now)
+	gift, err := telegramuser.EnsureStartGift(ctx, a.db, user.TelegramID, now)
 	if err != nil {
 		return StartResponse{}, true, err
 	}
-	return a.finishStart(ctx, update.Message.Chat.ID, command.Payload, gift.User, resolved.Created, gift.InitialGiftBytes, now)
+	return a.finishStart(ctx, chatID, payload, gift.User, created, gift.InitialGiftBytes, now)
 }
 
 func (a *StartApplication) finishStart(ctx context.Context, chatID int64, payload string, user telegramuser.User, created bool, initialGiftBytes int64, now time.Time) (StartResponse, bool, error) {
