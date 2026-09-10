@@ -10,7 +10,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/smorad3363/teleproxy/internal/admin"
 	"github.com/smorad3363/teleproxy/internal/config"
+	"github.com/smorad3363/teleproxy/internal/database"
 	"github.com/smorad3363/teleproxy/internal/httpapi"
 )
 
@@ -28,7 +30,29 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 
-	api := httpapi.New()
+	startupCtx, cancelStartup := context.WithTimeout(context.Background(), 30*time.Second)
+	db, err := database.Open(startupCtx, cfg.DatabasePath)
+	if err != nil {
+		cancelStartup()
+		return err
+	}
+	defer db.Close()
+
+	administrator, created, err := admin.BootstrapOwnerFromFile(
+		startupCtx,
+		db,
+		cfg.BootstrapAdminUser,
+		cfg.BootstrapPasswordFile,
+	)
+	cancelStartup()
+	if err != nil {
+		return err
+	}
+	if created {
+		logger.Info("initial administrator created", "username", administrator.Username)
+	}
+
+	api := httpapi.New(db, httpapi.Options{CookieSecure: cfg.CookieSecure})
 	server := &http.Server{
 		Addr:              cfg.HTTPAddr,
 		Handler:           api.Handler(),

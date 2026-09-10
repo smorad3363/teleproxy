@@ -3,13 +3,15 @@ package database
 import (
 	"context"
 	"database/sql"
+	"os"
 	"path/filepath"
 	"testing"
 )
 
 func TestOpenAppliesSQLiteInvariantsAndMigrations(t *testing.T) {
 	ctx := context.Background()
-	db, err := Open(ctx, filepath.Join(t.TempDir(), "teleproxy.db"))
+	dbPath := filepath.Join(t.TempDir(), "teleproxy.db")
+	db, err := Open(ctx, dbPath)
 	if err != nil {
 		t.Fatalf("Open() error = %v", err)
 	}
@@ -25,6 +27,14 @@ func TestOpenAppliesSQLiteInvariantsAndMigrations(t *testing.T) {
 	}
 	if journalMode != "wal" {
 		t.Fatalf("journal_mode = %q, want wal", journalMode)
+	}
+
+	info, err := os.Stat(filepath.Join(filepath.Dir(dbPath), "teleproxy.db"))
+	if err != nil {
+		t.Fatalf("stat database: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("database mode = %o, want 600", got)
 	}
 
 	var migrations int

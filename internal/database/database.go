@@ -4,18 +4,28 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	_ "github.com/mattn/go-sqlite3"
 )
 
-const (
-	busyTimeoutMS = 5000
-)
+const busyTimeoutMS = 5000
 
 func Open(ctx context.Context, path string) (*sql.DB, error) {
-	if strings.TrimSpace(path) == "" {
+	path = strings.TrimSpace(path)
+	if path == "" {
 		return nil, fmt.Errorf("database path is required")
+	}
+
+	if path != ":memory:" {
+		dir := filepath.Dir(path)
+		if dir != "." {
+			if err := os.MkdirAll(dir, 0o700); err != nil {
+				return nil, fmt.Errorf("create database directory: %w", err)
+			}
+		}
 	}
 
 	db, err := sql.Open("sqlite3", path)
@@ -36,6 +46,11 @@ func Open(ctx context.Context, path string) (*sql.DB, error) {
 
 	if err := db.PingContext(ctx); err != nil {
 		return closeOnError(fmt.Errorf("ping sqlite database: %w", err))
+	}
+	if path != ":memory:" {
+		if err := os.Chmod(path, 0o600); err != nil {
+			return closeOnError(fmt.Errorf("secure database permissions: %w", err))
+		}
 	}
 
 	var journalMode string

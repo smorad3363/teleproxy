@@ -8,27 +8,50 @@ import (
 	"time"
 )
 
-const defaultHTTPAddr = "127.0.0.1:8080"
+const (
+	defaultHTTPAddr     = "127.0.0.1:8080"
+	defaultDatabasePath = "data/teleproxy.db"
+	defaultAdminUser    = "admin"
+)
 
 type Config struct {
-	HTTPAddr          string
-	ReadHeaderTimeout time.Duration
-	ReadTimeout       time.Duration
-	WriteTimeout      time.Duration
-	IdleTimeout       time.Duration
+	HTTPAddr              string
+	DatabasePath          string
+	BootstrapAdminUser    string
+	BootstrapPasswordFile string
+	CookieSecure          bool
+	ReadHeaderTimeout     time.Duration
+	ReadTimeout           time.Duration
+	WriteTimeout          time.Duration
+	IdleTimeout           time.Duration
 }
 
 func Load() (Config, error) {
+	cookieSecure, err := envBool("TPROXY_COOKIE_SECURE", false)
+	if err != nil {
+		return Config{}, err
+	}
+
 	cfg := Config{
-		HTTPAddr:          envOrDefault("TPROXY_HTTP_ADDR", defaultHTTPAddr),
-		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       15 * time.Second,
-		WriteTimeout:      30 * time.Second,
-		IdleTimeout:       60 * time.Second,
+		HTTPAddr:              envOrDefault("TPROXY_HTTP_ADDR", defaultHTTPAddr),
+		DatabasePath:          envOrDefault("TPROXY_DATABASE_PATH", defaultDatabasePath),
+		BootstrapAdminUser:    envOrDefault("TPROXY_BOOTSTRAP_ADMIN_USER", defaultAdminUser),
+		BootstrapPasswordFile: os.Getenv("TPROXY_BOOTSTRAP_PASSWORD_FILE"),
+		CookieSecure:          cookieSecure,
+		ReadHeaderTimeout:     5 * time.Second,
+		ReadTimeout:           15 * time.Second,
+		WriteTimeout:          30 * time.Second,
+		IdleTimeout:           60 * time.Second,
 	}
 
 	if err := validateAddr(cfg.HTTPAddr); err != nil {
 		return Config{}, fmt.Errorf("TPROXY_HTTP_ADDR: %w", err)
+	}
+	if cfg.DatabasePath == "" {
+		return Config{}, fmt.Errorf("TPROXY_DATABASE_PATH must not be empty")
+	}
+	if cfg.BootstrapAdminUser == "" {
+		return Config{}, fmt.Errorf("TPROXY_BOOTSTRAP_ADMIN_USER must not be empty")
 	}
 
 	return cfg, nil
@@ -39,6 +62,18 @@ func envOrDefault(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func envBool(key string, fallback bool) (bool, error) {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback, nil
+	}
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return false, fmt.Errorf("%s must be a boolean", key)
+	}
+	return parsed, nil
 }
 
 func validateAddr(addr string) error {
