@@ -41,8 +41,8 @@ func TestOpenAppliesSQLiteInvariantsAndMigrations(t *testing.T) {
 	if err := db.QueryRow("SELECT COUNT(*) FROM schema_migrations").Scan(&migrations); err != nil {
 		t.Fatalf("count migrations: %v", err)
 	}
-	if migrations != 8 {
-		t.Fatalf("migration count = %d, want 8", migrations)
+	if migrations != 9 {
+		t.Fatalf("migration count = %d, want 9", migrations)
 	}
 
 	if err := Migrate(ctx, db); err != nil {
@@ -51,8 +51,8 @@ func TestOpenAppliesSQLiteInvariantsAndMigrations(t *testing.T) {
 	if err := db.QueryRow("SELECT COUNT(*) FROM schema_migrations").Scan(&migrations); err != nil {
 		t.Fatalf("count migrations after rerun: %v", err)
 	}
-	if migrations != 8 {
-		t.Fatalf("migration count after rerun = %d, want 8", migrations)
+	if migrations != 9 {
+		t.Fatalf("migration count after rerun = %d, want 9", migrations)
 	}
 }
 
@@ -122,8 +122,8 @@ INSERT INTO credit_buckets(
 	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM schema_migrations").Scan(&migrationCount); err != nil {
 		t.Fatal(err)
 	}
-	if migrationCount != 8 {
-		t.Fatalf("migration count = %d, want 8", migrationCount)
+	if migrationCount != 9 {
+		t.Fatalf("migration count = %d, want 9", migrationCount)
 	}
 	var username string
 	if err := db.QueryRowContext(ctx, "SELECT username FROM proxy_users WHERE id = ?", proxyUserID).Scan(&username); err != nil || username != "legacy" {
@@ -164,6 +164,15 @@ INSERT INTO forced_join_channels(
     chat_ref, display_name, join_url, enabled, required, position, custom_text, created_at, updated_at
 ) VALUES ('@legacy_gate', 'Legacy gate', 'https://t.me/legacy_gate', 1, 1, 0, '', 200, 200)`); err != nil {
 		t.Fatalf("new forced_join_channels table is unusable: %v", err)
+	}
+	var telegramUserID int64
+	if err := db.QueryRowContext(ctx, "SELECT id FROM telegram_users WHERE telegram_id = 12345").Scan(&telegramUserID); err != nil {
+		t.Fatalf("read migrated Telegram user: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `
+INSERT INTO referral_codes(telegram_user_id, code, created_at)
+VALUES (?, 'abcdefghijklmnop', 200)`, telegramUserID); err != nil {
+		t.Fatalf("new referral_codes table is unusable: %v", err)
 	}
 }
 
