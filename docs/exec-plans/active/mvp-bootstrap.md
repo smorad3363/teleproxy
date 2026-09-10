@@ -3,7 +3,7 @@
 Status: ACTIVE
 Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
-Latest verified checkpoint: `b16c08a5adcfdcf9a3ddaba9b6d9e5d85ab862c0`
+Latest verified checkpoint: `c2599bdedaffad413892769131ed925db0bec139`
 
 ## Recovery contract
 
@@ -21,7 +21,7 @@ Non-negotiable architecture: SQLite WAL/NORMAL is authoritative Control Plane st
 - CP-007 Telemt health client: `c67874de95b2ca4ff1786ffbd349fb091f270647`, CI `34438961960` PASS.
 - CP-008 proxy lifecycle core: `281f91afca202d0cc9a61e64fe88fe7ebbea5aab`, CI `34445848656` PASS.
 - CP-009 authenticated lifecycle API: `24cec6f875fb5f56bfb97d8159d8fa2ac3b8e533`, CI `34446509254` PASS.
-- CP-010 Telemt quota/expiry contract: `907d818300f9cdb01473fecacf0cd76bd8db1438`, CI `34447125904` PASS.
+- CP-010 Telemt quota/expiry contract: `907d818300f9cdb01456de043b3e98a74be4686532632`, CI `34447125904` PASS.
 - CP-011 Credit Bucket ledger: `50baa6572c01bf320ac475339cc82a6710438de8`, CI `34448520864` PASS.
 - CP-012 quota usage + projection boundaries: `1013aca4ea01456de043b3e98a74be4686532632`, CI `34449339437` PASS.
 - CP-013 durable projection journal: `2cc686fa1da66b8cf3b37c1a6565d0bbb94520bf`, CI `34452322294` PASS.
@@ -49,20 +49,21 @@ Non-negotiable architecture: SQLite WAL/NORMAL is authoritative Control Plane st
 - CP-035 Sponsor Profile persistence/domain primitives: `e1df28fd16d59b3c08eff86ee6b23d579eaf199f`, CI `34510107359` PASS.
 - CP-036 Authenticated Sponsor Profile Admin CRUD API: `2abc393bf144b0e269d166a544f1df3277649ffa`, CI `34510993603` PASS.
 - CP-037 Web Panel Sponsor management surface: `b16c08a5adcfdcf9a3ddaba9b6d9e5d85ab862c0`, CI `34518089493` PASS.
+- CP-038 Proxy Node identity/config persistence primitives: `c2599bdedaffad413892769131ed925db0bec139`, CI `34519237959` PASS.
 
-### CP-037 implemented
+### CP-038 implemented
 
-- authenticated `/sponsors` is registered through the production Sponsor route set and redirects unauthenticated Web requests to `/login` using the existing session behavior.
-- the server-rendered page lists canonical Sponsor Profiles, safely escapes user-controlled fields with `html/template`, uses `Cache-Control: no-store`, and exposes the session-derived CSRF token only inside the authenticated page.
-- create/edit/delete controls call the existing CP-036 `/api/sponsors` endpoints with same-origin credentials and `X-CSRF-Token`; Sponsor validation/business rules are not duplicated in page handlers.
-- the existing dashboard links to Sponsor management; no frontend framework was introduced.
-- the final 8C net diff from the CP-036 docs head contains exactly four files: one Sponsor page handler/template, its tests, one route-registration line, and the dashboard link/template adjustment.
-- no Node assignment, weighted/sticky allocation, Campaign routing, Telemt ad-tag projection, Node compatibility/Middle Proxy enforcement, Sponsor statistics, Bot Admin Sponsor UI or Sponsor audit mutation was added.
-- candidate `b16c08a5adcfdcf9a3ddaba9b6d9e5d85ab862c0` passed Format, Vet, full Go tests, installer syntax/unit tests, Docker prerequisites, and Telemt E2E/rerun in CI `34518089493`.
+- additive migration `012_proxy_nodes.sql` creates static Proxy/Relay Node metadata without changing current runtime routing.
+- authoritative fields are node type (`proxy`/`relay`), stable case-insensitive unique name, region, host/IP, public host, MTProto port, internal API endpoint, enabled state and standard timestamps.
+- Node domain supports create/get/list with deterministic ID ordering and canonicalizes hostnames/IPs plus HTTP(S) API endpoints.
+- invalid types/names/regions/hosts/ports/endpoints and duplicate stable names fail safely; API endpoint userinfo, query and fragment are rejected so credentials/tokens are not accepted through that field.
+- Node schema contains no token/secret/password column; no API credential is persisted.
+- migration count advanced from 11 to 12 while v5 legacy data and v9 referral-upgrade regression coverage remain intact and migration reruns remain idempotent.
+- no health/version/heartbeat/activity/bandwidth telemetry, lifecycle actions, Sponsor assignment, Relay runtime, FakeTLS/mode/session limits, Admin Node API/UI, compose changes or multi-Telemt routing were added.
+- final 9A diff is one atomic five-file commit and candidate `c2599bdedaffad413892769131ed925db0bec139` passed Format, Vet, full Go tests, installer syntax/unit tests, Docker prerequisites and Telemt E2E/rerun in CI `34519237959`.
 
 ## Supplied source hashes
 
-Rechecked from mounted originals on 2026-09-10:
 - AGENTS: `4a0c4156f14c3a40fbf2c6da8937f36c9f7f15f694bc3895181b13ccc0984483`
 - ROADMAP_EN: `90605c0e08bd960b02d4569e49995dd55c2ece1fb37ca6a09d37c66350114009`
 - ROADMAP_FA: `a9219b597eac4a2d9c73f5ae1013b25a3e15a862266665fcf5de3e2aae174fab`
@@ -77,62 +78,56 @@ Telemt `3.5.7`, upstream commit `4ca7418442478cd92f9e861c21977a81b249efc8`.
 
 ## Active stage
 
-### Stage 9A — Proxy Node identity/config persistence primitives — ACTIVE
+### Stage 9B — Authenticated Proxy Node Admin CRUD API — ACTIVE
 
-Roadmap basis: Web Panel explicitly includes Nodes; each Node has identity/network/configuration fields; the schema should be Multi-Node/Relay-ready from day one; Sponsor Profiles later require Node assignment. The current runtime and compose topology still configure one global Telemt endpoint, so this milestone introduces authoritative Node metadata only and does not switch runtime routing.
+Roadmap basis: Web Panel/Bot Admin explicitly include Nodes, while CP-038 now provides authoritative static Node metadata. This milestone exposes only that metadata through the existing Admin API pattern; it does not test or control remote Nodes.
 
 Scope only:
-- add the smallest additive `proxy_nodes` persistence/domain model for stable Node identity/configuration: ID, node type (`proxy`/`relay`), name, region, host/IP, public host, MTProto port, internal API endpoint, enabled, and creation/update timestamps;
-- validate/canonicalize names/regions/hosts/ports/API endpoint without making network calls and without persisting API credentials or other secrets;
-- support create/get/list with deterministic ordering and safe duplicate identity handling;
-- keep live health/version/heartbeat/active-user/bandwidth fields out of authoritative static configuration until a telemetry contract exists;
-- do not change `TPROXY_TELEMT_API_URL`, compose topology, quota reconciliation routing, installer behavior, Relay parent/tunnel runtime, Sponsor assignment, FakeTLS/connection-mode/session-limit semantics, Web/Bot Node UI or Node lifecycle actions in 9A.
+- add Node domain update/delete using exactly CP-038 validation/canonicalization;
+- expose authenticated `GET/POST /api/nodes` and `PUT/DELETE /api/nodes/{id}`;
+- list is `no-store`; create/update/delete require existing session-derived CSRF, bounded JSON and no unknown fields;
+- return safe typed invalid/conflict/not-found problems without mutation on failure;
+- no network probes, health/version/heartbeat telemetry, Enable/Disable/Drain/Restart/Update runtime actions, multi-Telemt routing, compose/installer changes, Sponsor assignment, Relay tunnel runtime, Web/Bot Node UI or Node audit mutation in 9B.
 
 Acceptance:
-- multiple valid Proxy/Relay metadata records can coexist and round-trip deterministically;
-- malformed host/public-host/port/internal API endpoint, invalid type/name/region and duplicate stable identity fail before unintended mutation;
-- internal API endpoint rejects embedded credentials and fragments; no secret/token field exists in Node persistence;
-- migration is additive/backward-compatible and prior data/migrations remain intact/idempotent;
-- current single-Telemt runtime behavior remains unchanged;
+- authenticated CRUD round-trips canonical CP-038 metadata and deterministic list ordering;
+- unauthenticated calls fail under the existing Admin API contract and mutations reject missing/invalid CSRF;
+- malformed/unknown/oversized/invalid requests, duplicate names and unknown IDs fail safely without unintended mutation;
+- no Node API operation contacts the configured internal API endpoint or changes current Telemt runtime state;
+- existing Sponsor/referral/proxy/quota behavior remains unchanged;
 - format/vet/test and Docker/Telemt E2E remain green.
 
 ### Stage 7D2C — Exactly-once referral reward issuance — BLOCKED ON PRODUCT SEMANTICS
 
-The supplied English and Persian roadmaps define reward amount/expiry and invitee eligibility conditions but do not specify who receives the reward Credit Bucket: inviter, invitee, or both. Repository evidence has not resolved this. Do not infer a recipient.
+Roadmaps define reward amount/expiry and invitee eligibility conditions but do not specify who receives the Credit Bucket: inviter, invitee, or both. Do not infer a recipient.
 
 ### Stage 7D3B — Remaining minimum anti-abuse controls — BLOCKED ON PRODUCT SEMANTICS
 
-The roadmap requires configurable daily/weekly reward caps, cooldowns, blacklist, suspicious-score mechanism and admin mutation audit log, but does not specify cap scope/default values, cooldown semantics/default, blacklist subject, or suspicious-score inputs/threshold. Do not invent those contracts.
+Roadmap requires configurable daily/weekly caps, cooldowns, blacklist and suspicious score, but does not define cap scope/defaults, cooldown semantics/default, blacklist subject or score inputs/threshold. Do not invent those contracts.
 
 ## Important decisions
 
 - Credit Buckets are source of truth; Telemt is only enforcement projection.
 - Telemt disable cancels active sessions; quota `0` blocks traffic.
-- Bot token and webhook secret are protected runtime files, never ordinary SQLite settings.
+- Bot token/webhook secret are protected runtime files, never ordinary SQLite settings.
 - Telemt user view reconstructs proxy links from Telemt-managed secret; Control Plane does not persist MTProto plaintext.
-- Telegram `getChatMember` failures fail closed because membership for another user depends on correct Bot/channel permissions.
-- Forced Join gates gift and provisioning, not just link visibility; identity may exist with zero credit.
-- Manual recheck callback data is fixed/non-secret; authoritative identity always comes from the Telegram update, not callback data.
-- Referral attribution must be durable before the Forced Join gap because recheck callback data intentionally carries no referral identity.
-- Production referral links reuse configured `TPROXY_BOT_USERNAME`; no extra token or runtime identity source is needed.
-- Eligibility approval is distinct from reward settlement: `pending + eligible_at` is approved but not rewarded.
-- Referral credit recipient semantics remain unresolved; do not issue referral rewards until repository/product evidence resolves inviter versus invitee versus both.
-- Sponsor Profile persistence is independent of assignment routing; assignment modes, sticky allocation, Telemt projection, compatibility and Middle Proxy enforcement remain separate later milestones.
-- The existing Web Panel remains server-rendered/minimal; no frontend framework is introduced for isolated management surfaces.
-- CP-037 still has no Node domain/table. Current config/compose use one global Telemt API endpoint/service, so Node metadata must land before multi-node runtime routing or Sponsor-to-Node assignment.
+- Forced Join gates gift and provisioning; referral attribution is durable before the Forced Join recheck gap.
+- Referral credit recipient semantics remain unresolved; do not issue referral rewards.
+- Sponsor Profile persistence is independent of assignment routing; sticky/weighted assignment and Telemt projection remain separate later milestones.
+- CP-038 introduces Node metadata only. `TPROXY_TELEMT_API_URL`, current compose topology and quota reconciliation still target one global Telemt service.
+- Relay records are schema-readiness metadata only; no Iran Relay tunnel runtime exists yet.
+- Existing Web Panel remains server-rendered/minimal; do not introduce a frontend framework for isolated management surfaces.
 
 ## Validation/failure log
 
-- Prior format/test transfer failures were repaired without weakening production validation; no reset/force-push was used.
-- D2B2 initial candidate `e50d7b299bd0793ed10f8764f8113f77eae09215` failed only Format because a transferred test raw string gained extra backslashes; repair `7fd1143723532a9d9a7ff5591c914b966b7e129f` restored the exact gofmt-clean blob and passed full CI.
-- D3A final candidate `80b02d1183edfb65163b7b7a5dfe1b3834a2de9a` passed full CI `34508958312`.
-- CP-034 docs promotion `ba131d11b62e394bedc3e03b1af267981a14d5a0` passed full CI `34509372354`.
-- 8A candidate `e1df28fd16d59b3c08eff86ee6b23d579eaf199f` passed full CI `34510107359` on the first candidate.
-- CP-035 docs promotion `55ee6d8128f4a63925ce54744c0cf7c98a73d3b8` passed full CI `34510460750`.
-- 8B candidate `2abc393bf144b0e269d166a544f1df3277649ffa` passed full CI `34510993603` on the first candidate.
-- CP-036 docs promotion `c1d93e7202a5afb34faf6f307ad92761e7f541b7` passed full CI `34517423137`.
-- 8C candidate `b16c08a5adcfdcf9a3ddaba9b6d9e5d85ab862c0` passed full CI `34518089493` on the first candidate.
+- Prior format/test transport issues were repaired without weakening production validation; no reset/force-push was used.
+- D2B2 transfer corruption was repaired at CP-033 and final CI passed.
+- CP-034 docs `ba131d11...` CI `34509372354` PASS.
+- CP-035 candidate `e1df28fd...` CI `34510107359` PASS; docs `55ee6d81...` CI `34510460750` PASS.
+- CP-036 candidate `2abc393b...` CI `34510993603` PASS; docs `c1d93e72...` CI `34517423137` PASS.
+- CP-037 candidate `b16c08a5...` CI `34518089493` PASS; docs `bb0e2308...` CI `34518442647` PASS.
+- CP-038 candidate `c2599bde...` CI `34519237959` PASS on the first candidate. One initial unattached `create_commit` call was tool-blocked before any branch move; the same atomic tree was then committed normally and fast-forwarded. No repository state was lost or rewritten.
 
 ## Current next action
 
-Resume from CP-037. Verify the CP-037 docs-head CI, then implement only Stage 9A additive Proxy Node identity/config persistence/domain primitives. Do not change current single-Telemt runtime routing, installer/compose, Sponsor assignment, Node telemetry/lifecycle actions, or blocked referral reward semantics in this milestone.
+Verify the CP-038 docs-head CI. Then implement only Stage 9B from CP-038: Node update/delete plus authenticated static metadata CRUD API. Keep current single-Telemt runtime routing, installer/compose, Sponsor assignment, Node runtime/lifecycle actions and blocked referral reward semantics unchanged.
