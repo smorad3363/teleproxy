@@ -69,7 +69,7 @@ telemt_ip=$(sudo docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddr
 [[ -n "$telemt_ip" ]]
 unauth_code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 "http://${telemt_ip}:9091/v1/health")
 [[ "$unauth_code" != 200 ]]
-api_token=$(sudo tr -d '\r\n' <"$INSTALL_DIR/secrets/telemt-api-token")
+api_token=$(sudo cat "$INSTALL_DIR/secrets/telemt-api-token" | tr -d '\r\n')
 [[ $api_token =~ ^[0-9a-f]{64}$ ]]
 auth_code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 -H "Authorization: Bearer ${api_token}" "http://${telemt_ip}:9091/v1/health")
 [[ "$auth_code" == 200 ]]
