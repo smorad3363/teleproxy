@@ -20,6 +20,8 @@ type Config struct {
 	BootstrapAdminUser    string
 	BootstrapPasswordFile string
 	CookieSecure          bool
+	TelemtAPIURL           string
+	TelemtAPITokenFile    string
 	ReadHeaderTimeout     time.Duration
 	ReadTimeout           time.Duration
 	WriteTimeout          time.Duration
@@ -38,6 +40,8 @@ func Load() (Config, error) {
 		BootstrapAdminUser:    envOrDefault("TPROXY_BOOTSTRAP_ADMIN_USER", defaultAdminUser),
 		BootstrapPasswordFile: os.Getenv("TPROXY_BOOTSTRAP_PASSWORD_FILE"),
 		CookieSecure:          cookieSecure,
+		TelemtAPIURL:          os.Getenv("TPROXY_TELEMT_API_URL"),
+		TelemtAPITokenFile:    os.Getenv("TPROXY_TELEMT_API_TOKEN_FILE"),
 		ReadHeaderTimeout:     5 * time.Second,
 		ReadTimeout:           15 * time.Second,
 		WriteTimeout:          30 * time.Second,
@@ -52,6 +56,9 @@ func Load() (Config, error) {
 	}
 	if cfg.BootstrapAdminUser == "" {
 		return Config{}, fmt.Errorf("TPROXY_BOOTSTRAP_ADMIN_USER must not be empty")
+	}
+	if (cfg.TelemtAPIURL == "") != (cfg.TelemtAPITokenFile == "") {
+		return Config{}, fmt.Errorf("TPROXY_TELEMT_API_URL and TPROXY_TELEMT_API_TOKEN_FILE must be configured together")
 	}
 
 	return cfg, nil

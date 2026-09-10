@@ -41,83 +41,89 @@ Each stage is intentionally small and independently verifiable. Do not broaden a
 
 Completed:
 - active repository-local recovery plan
-- architecture boundaries
-- security baseline
-- reliability/recovery invariants
+- architecture/security/reliability documents
 - isolated task branch
-- CI with Go and installer checks
+- CI with Go and installer E2E
+- exact source files re-materialized locally and SHA-256 re-verified
 
 Remaining:
-- commit the supplied canonical `AGENTS.md` at repository root
-- mirror supplied `ROADMAP_FA.md` and `ROADMAP_EN.md` at repository root
+- commit the supplied canonical `AGENTS.md`, `ROADMAP_FA.md`, and `ROADMAP_EN.md` at repository root
 
-The supplied conversation files are currently materialized locally and remain authoritative until mirrored exactly into the branch.
+Verified source hashes:
+- `AGENTS.md`: `4a0c4156f14c3a40fbf2c6da8937f36c9f7f15f694bc3895181b13ccc0984483`
+- `ROADMAP_EN.md`: `90605c0e08bd960b02d4569e49995dd55c2ece1fb37ca6a09d37c66350114009`
+- `ROADMAP_FA.md`: `a9219b597eac4a2d9c73f5ae1013b25a3e15a862266665fcf5de3e2aae174fab`
+
+Current GitHub connector does not accept a local file argument for blob writes and large base64 output is truncated by the tool response. Do not create partial mirrors; the conversation source files remain authoritative until an exact-byte upload path is available.
 
 ### Stage 2 — Minimal Control Plane — COMPLETE
 
-Implemented validated HTTP config, graceful HTTP server, `/healthz`, `/readyz`, shared Problem Details and tests.
-Validation: local gofmt/test/vet PASS; GitHub Actions run `34419759826` PASS.
+Implemented validated HTTP config, graceful HTTP server, `/healthz`, `/readyz`, Problem Details and tests.
+CI `34419759826` PASS.
 
 ### Stage 3 — Core persistence + admin bootstrap — COMPLETE
 
 Verified commit: `5798075de40d2f966d8546a18e6fa450d7142f90`
-CI run: `34420104043` PASS.
+CI `34420104043` PASS.
 
-Implemented SQLite WAL/foreign keys/busy timeout/NORMAL sync, migrations, owner bootstrap, PBKDF2-SHA256 password hashing, hashed session-token persistence and tests.
+Implemented SQLite WAL/foreign keys/busy timeout/NORMAL sync, migrations, owner bootstrap, PBKDF2-SHA256 password hashing and hashed session-token persistence.
 
 ### Stage 4 — Minimal Web login — COMPLETE
 
 Verified commit: `2e83b4770dd8e26fc5c0ebcca8dee6aa51111254`
-CI run: `34420655852` PASS.
+CI `34420655852` PASS.
 
-Implemented DB startup/migration, protected one-time owner bootstrap, DB-backed expiring sessions, login/dashboard, `HttpOnly`/`SameSite=Strict` cookie handling, CSRF, generic credential failures, direct-peer login rate limiting and database readiness.
+Implemented protected one-time owner bootstrap, DB-backed sessions, login/dashboard, secure cookie flags, CSRF, generic credential failures, login rate limiting and DB readiness.
 
 ### Stage 5 — Installer foundation — COMPLETE
 
 Verified commit: `457f52783f9b2962c55be00beb801f0f2534958c`
-Verified CI run: `34427021157` PASS.
+CI `34427021157` PASS.
 
-Implemented multi-stage non-root Control Plane image, hardened Compose service, exclusive installer lock/state, random persistent Panel port, one-time admin password, safe rerun, final install summary, `tproxy` management and real Docker E2E.
+Implemented hardened Docker Control Plane, installer lock/state, random persistent Panel port, one-time admin password, safe rerun, final install summary, `tproxy`, and Docker E2E.
 
 ### Stage 6A — Pinned Telemt data plane — COMPLETE
 
 Verified commit: `47a95349922ba5be37cf0ed8416b482de08580ef`
-Verified CI run: `34438212903` PASS.
+CI `34438212903` PASS.
 
 Implemented:
-- Telemt `3.5.7` pinned to exact release artifacts
-- SHA-256 verification before extracting the Telemt binary
+- Telemt `3.5.7` exact release artifacts with checksum verification
 - amd64 musl digest `db26e363bb98f11a02a7fd6d0df455f4987af5cdb2a5897da7f6fb8d613fbf41`
 - arm64 musl digest `8730080863f8f8ed52ee11f9c51c4daa30b3044fc842538bf6dd8c91ac0572c1`
-- non-root distroless Telemt runtime with liveness healthcheck
-- Telemt service on the project bridge; MTProto listener published, Control API `9091` not host-published
-- cryptographically random persistent Telemt API Bearer token, stored outside install state/log output
-- generated Telemt config with strict file permissions
-- disabled internal bootstrap proxy user solely to satisfy Telemt's non-empty-users startup invariant
-- persistent Proxy port/config/data state and conflict checks
-- `tproxy proxy status|restart|logs` and Telemt health in `tproxy doctor`
-- installer waits for both Control readiness and Telemt health before success output
-- E2E checks API host isolation, unauthorized rejection, authorized health, token non-leakage, proxy health and rerun port persistence
+- non-root Telemt container and liveness healthcheck
+- public/configurable MTProto port but no host publication of API `9091`
+- persistent 256-bit Telemt Bearer token outside install state/output
+- generated protected Telemt config
+- disabled internal bootstrap user to satisfy Telemt's non-empty-users invariant
+- Proxy state/port/config handling and `tproxy proxy` management
+- E2E checks API host isolation, auth, token non-leakage, proxy health and rerun persistence
 
-Architecture note: the project bridge is intentionally not Docker `internal:true` because Telemt itself needs outbound connectivity to Telegram. API isolation is enforced by no host port publication plus Bearer authentication.
+Architecture note: the project bridge is not Docker `internal:true` because Telemt needs outbound Telegram connectivity. API isolation is no host publication plus Bearer authentication.
 
-### Stage 6B — Control Plane Telemt client adapter — NEXT
+### Stage 6B — Control Plane Telemt client adapter — ACTIVE
 
-Scope:
-- add focused `internal/telemt` Go client
-- load API URL and Bearer token from config/file without logging the token
-- bounded HTTP client timeouts
-- typed health result and dependency errors
-- tests for healthy, unauthorized, malformed response, unavailable and timeout behavior
-- wire adapter into Control Plane without making `/readyz` depend on Telemt
-- expose proxy dependency state only through authenticated/admin-safe status surface
+Candidate scope:
+- focused `internal/telemt` Go client
+- load API URL and protected Bearer-token file without logging token contents
+- bounded HTTP timeout and response-body limit
+- safe typed states: `healthy`, `unauthorized`, `unavailable`, `invalid_response`, `not_configured`
+- validate Telemt URL/token-file configuration pair
+- wire the client without any startup network dependency
+- authenticated `GET /api/system/proxy` admin status surface
+- keep `/readyz` independent of Telemt health
 
 Acceptance:
-- token is never emitted in logs/errors/client-visible responses
-- `GET /v1/health` is called with required Authorization header
-- timeout/unavailable Telemt does not stop Control Plane startup/readiness
-- tests cover healthy/auth/unavailable/timeout paths
+- Authorization header is sent to Telemt `/v1/health`
+- token is never returned in status/errors/logs
+- malformed, auth, unavailable and timeout paths are classified without raw upstream body leakage
+- unauthenticated proxy-status requests are rejected
+- Telemt outage does not make Control Plane `/readyz` fail
 - Go format/vet/test and existing installer E2E remain green
+
+### Stage 6C — Proxy user lifecycle — PENDING
+
+After 6B, implement the first DB-to-Telemt user lifecycle slice (create/list/enable/disable/rotate) with reconciliation and no secret leakage before adding broader quota/referral/bot features.
 
 ## Checkpoints
 
@@ -146,33 +152,34 @@ Acceptance:
 ### CP-006 — pinned Telemt data plane verified
 - Commit: `47a95349922ba5be37cf0ed8416b482de08580ef`
 - CI: `34438212903` PASS
-- Recovery point: if interrupted, inspect every commit/file after CP-006. Finish the repository-source mirror checkpoint if it is the active diff; otherwise repair/continue Stage 6B before starting user lifecycle work.
+- Recovery point: inspect every commit/file after CP-006. If Stage 6B has started, repair/finish it before any proxy user lifecycle work.
 
 ## Decisions / discoveries
 
 - Repository was empty at task start.
-- Telemt remains an external dependency integrated via authenticated Control API; no Telemt source is copied into Teleproxy.
-- Pin Telemt versions/checksums; never follow unbounded `latest` in production installation.
-- Telemt 3.5.7 rejects an empty `[access.users]`; use a generated disabled internal bootstrap user until real user lifecycle exists.
-- Telemt Control API must not be published as a host port.
-- Project bridge cannot be Docker-internal because Telemt requires outbound Telegram connectivity.
-- SQLite remains single-connection in the MVP so connection-scoped PRAGMAs cannot silently disappear.
-- Initial admin password is passed through a protected bootstrap file, never a plaintext command-line argument or normal log field.
-- Random Panel port is not a security boundary; TLS hardening is still required before treating public Panel exposure as production-ready.
+- Telemt remains an external dependency integrated via authenticated Control API; its source is not copied into Teleproxy.
+- Pin Telemt versions/checksums; never follow unbounded `latest` for production install.
+- Telemt 3.5.7 rejects empty `[access.users]`; generated disabled bootstrap user is temporary until real user lifecycle exists.
+- Telemt API must not be host-published.
+- Telemt outage must not take down Control Plane readiness.
+- SQLite remains single-connection in MVP so connection-scoped PRAGMAs cannot silently disappear.
+- Initial admin password uses a protected bootstrap file and is displayed only once after verified install.
+- Random Panel port is not a security boundary; TLS hardening remains required for production public exposure.
 
 ## Validation / failure log
 
-- 2026-09-10: repository initialized and isolated branch created.
-- 2026-09-10: Stage 2 local format/test/vet PASS; CI `34419759826` PASS.
+- 2026-09-10: Stage 2 CI `34419759826` PASS.
 - 2026-09-10: Stage 3 CI `34420104043` PASS.
-- 2026-09-10: Stage 4 CI `34420655852` PASS; promoted to CP-004.
-- 2026-09-10: Stage 5 candidate `c1cde407...`; CI `34426475546` failed because bootstrap secret was `0640`; backend correctly rejected it. Kept backend validation and changed secret to UID 10001 + `0600`.
-- 2026-09-10: Stage 5 fix `34b455b0...`; CI `34426870772` failed because the E2E harness omitted temporary `TPROXY_INSTALL_DIR`; production unchanged.
-- 2026-09-10: Stage 5 final `457f5278...`; CI `34427021157` PASS; promoted to CP-005.
-- 2026-09-10: Stage 6A candidate `39349dcf...`; CI `34437891406` reached healthy Telemt but the E2E used `docker compose port telemt 9091` as an unreliable no-binding assertion. Production Compose already had no `9091` mapping; changed test to inspect Docker `HostConfig.PortBindings` directly.
-- 2026-09-10: Stage 6A test fix `91722c95...`; CI `34438040249` passed installation/isolation up to reading the protected token, then failed because shell input redirection happened before `sudo`. Production token permissions remained `0600`; test changed to read via `sudo cat`.
-- 2026-09-10: Stage 6A final `47a95349...`; CI `34438212903` PASS including Go, shell/unit checks, real Docker Telemt build/install, API isolation/authentication, secret non-leakage, proxy health and rerun. Promoted to CP-006.
+- 2026-09-10: Stage 4 CI `34420655852` PASS; CP-004.
+- 2026-09-10: Stage 5 `c1cde407...`, CI `34426475546` failed because bootstrap secret was `0640`; kept strict backend validation and changed it to UID 10001 + `0600`.
+- 2026-09-10: Stage 5 `34b455b0...`, CI `34426870772` failed because E2E omitted temporary `TPROXY_INSTALL_DIR`; production unchanged.
+- 2026-09-10: Stage 5 `457f5278...`, CI `34427021157` PASS; CP-005.
+- 2026-09-10: Stage 6A `39349dcf...`, CI `34437891406` reached healthy Telemt but E2E used an unreliable `docker compose port` no-binding assertion; changed to direct Docker `HostConfig.PortBindings` inspection.
+- 2026-09-10: Stage 6A `91722c95...`, CI `34438040249` then failed because shell redirection read protected token before `sudo`; token stayed `0600`, harness changed to `sudo cat`.
+- 2026-09-10: Stage 6A `47a95349...`, CI `34438212903` PASS; CP-006.
+- 2026-09-10: canonical source files re-materialized and SHA-256 values matched the original recorded hashes. Exact repository mirror still blocked by connector large-file transport; no partial files committed.
+- 2026-09-10: Stage 6B local isolated tests for `internal/telemt` and `internal/config` PASS under Go 1.23; integration compile/test is delegated to pinned CI Go 1.27.1 because repository minimum is Go 1.26.
 
 ## Current next action
 
-Mirror the exact supplied `AGENTS.md`, `ROADMAP_FA.md`, and `ROADMAP_EN.md` into repository root as a documentation-only checkpoint now that the source files are materialized locally. Then implement Stage 6B from CP-006 without coupling Control Plane readiness to Telemt availability.
+Publish the coherent Stage 6B candidate from CP-006, run Go format/vet/test plus existing installer/Telemt E2E, repair Stage 6B on any failure, and promote to CP-007 only after all checks pass.

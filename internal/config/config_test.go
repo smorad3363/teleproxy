@@ -9,6 +9,8 @@ func TestLoadDefaults(t *testing.T) {
 		"TPROXY_BOOTSTRAP_ADMIN_USER",
 		"TPROXY_BOOTSTRAP_PASSWORD_FILE",
 		"TPROXY_COOKIE_SECURE",
+		"TPROXY_TELEMT_API_URL",
+		"TPROXY_TELEMT_API_TOKEN_FILE",
 	} {
 		t.Setenv(key, "")
 	}
@@ -29,6 +31,9 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.CookieSecure {
 		t.Fatal("CookieSecure = true, want false by default")
 	}
+	if cfg.TelemtAPIURL != "" || cfg.TelemtAPITokenFile != "" {
+		t.Fatalf("Telemt client unexpectedly configured: %#v", cfg)
+	}
 }
 
 func TestLoadRejectsInvalidAddress(t *testing.T) {
@@ -44,6 +49,8 @@ func TestLoadAcceptsExplicitSettings(t *testing.T) {
 	t.Setenv("TPROXY_BOOTSTRAP_ADMIN_USER", "rootadmin")
 	t.Setenv("TPROXY_BOOTSTRAP_PASSWORD_FILE", "/run/secrets/admin-password")
 	t.Setenv("TPROXY_COOKIE_SECURE", "true")
+	t.Setenv("TPROXY_TELEMT_API_URL", "http://telemt:9091")
+	t.Setenv("TPROXY_TELEMT_API_TOKEN_FILE", "/run/secrets/telemt-api-token")
 
 	cfg, err := Load()
 	if err != nil {
@@ -51,6 +58,17 @@ func TestLoadAcceptsExplicitSettings(t *testing.T) {
 	}
 	if cfg.HTTPAddr != "0.0.0.0:9000" || !cfg.CookieSecure {
 		t.Fatalf("unexpected config: %#v", cfg)
+	}
+	if cfg.TelemtAPIURL != "http://telemt:9091" || cfg.TelemtAPITokenFile != "/run/secrets/telemt-api-token" {
+		t.Fatalf("unexpected Telemt config: %#v", cfg)
+	}
+}
+
+func TestLoadRejectsPartialTelemtConfig(t *testing.T) {
+	t.Setenv("TPROXY_TELEMT_API_URL", "http://telemt:9091")
+	t.Setenv("TPROXY_TELEMT_API_TOKEN_FILE", "")
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() accepted Telemt URL without token file")
 	}
 }
 

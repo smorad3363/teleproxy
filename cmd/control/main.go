@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"github.com/smorad3363/teleproxy/internal/config"
 	"github.com/smorad3363/teleproxy/internal/database"
 	"github.com/smorad3363/teleproxy/internal/httpapi"
+	"github.com/smorad3363/teleproxy/internal/telemt"
 )
 
 func main() {
@@ -52,7 +54,16 @@ func run(logger *slog.Logger) error {
 		logger.Info("initial administrator created", "username", administrator.Username)
 	}
 
-	api := httpapi.New(db, httpapi.Options{CookieSecure: cfg.CookieSecure})
+	var proxyHealth telemt.Checker
+	if cfg.TelemtAPIURL != "" {
+		client, err := telemt.NewFromTokenFile(cfg.TelemtAPIURL, cfg.TelemtAPITokenFile, 2*time.Second)
+		if err != nil {
+			return fmt.Errorf("configure Telemt client: %w", err)
+		}
+		proxyHealth = client
+	}
+
+	api := httpapi.NewWithProxyHealth(db, httpapi.Options{CookieSecure: cfg.CookieSecure}, proxyHealth)
 	server := &http.Server{
 		Addr:              cfg.HTTPAddr,
 		Handler:           api.Handler(),
