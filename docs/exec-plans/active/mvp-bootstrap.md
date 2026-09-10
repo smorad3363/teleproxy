@@ -3,7 +3,7 @@
 Status: ACTIVE
 Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
-Latest verified checkpoint: `2abc393bf144b0e269d166a544f1df3277649ffa`
+Latest verified checkpoint: `b16c08a5adcfdcf9a3ddaba9b6d9e5d85ab862c0`
 
 ## Recovery contract
 
@@ -48,15 +48,17 @@ Non-negotiable architecture: SQLite WAL/NORMAL is authoritative Control Plane st
 - CP-034 Referral history read model + authenticated Admin API: `80b02d1183edfb65163b7b7a5dfe1b3834a2de9a`, CI `34508958312` PASS.
 - CP-035 Sponsor Profile persistence/domain primitives: `e1df28fd16d59b3c08eff86ee6b23d579eaf199f`, CI `34510107359` PASS.
 - CP-036 Authenticated Sponsor Profile Admin CRUD API: `2abc393bf144b0e269d166a544f1df3277649ffa`, CI `34510993603` PASS.
+- CP-037 Web Panel Sponsor management surface: `b16c08a5adcfdcf9a3ddaba9b6d9e5d85ab862c0`, CI `34518089493` PASS.
 
-### CP-036 implemented
+### CP-037 implemented
 
-- Sponsor domain now supports update/delete using the same CP-035 validation and canonicalization rules.
-- authenticated Admin JSON list/create/update/delete endpoints are wired through the existing session contract; create/update/delete require session-derived CSRF and bounded known-field JSON.
-- list is read-only/no-store; duplicate canonical `ad_tag`, invalid payloads and unknown IDs return safe typed errors without unintended mutation.
-- the final 8B net diff from the CP-035 docs head contains exactly five files: Sponsor domain manage/tests, Sponsor HTTP handler/tests, and one route-registration line in the existing constructor path.
-- no Web UI, Bot Admin UI, Node assignment, weighted/sticky allocation, Campaign routing, Telemt ad-tag projection, Node compatibility/Middle Proxy enforcement, statistics aggregation or Sponsor mutation audit was added.
-- candidate `2abc393bf144b0e269d166a544f1df3277649ffa` passed Format, Vet, full Go tests, installer syntax/unit tests, Docker prerequisites, and Telemt E2E/rerun in CI `34510993603`.
+- authenticated `/sponsors` is registered through the production Sponsor route set and redirects unauthenticated Web requests to `/login` using the existing session behavior.
+- the server-rendered page lists canonical Sponsor Profiles, safely escapes user-controlled fields with `html/template`, uses `Cache-Control: no-store`, and exposes the session-derived CSRF token only inside the authenticated page.
+- create/edit/delete controls call the existing CP-036 `/api/sponsors` endpoints with same-origin credentials and `X-CSRF-Token`; Sponsor validation/business rules are not duplicated in page handlers.
+- the existing dashboard links to Sponsor management; no frontend framework was introduced.
+- the final 8C net diff from the CP-036 docs head contains exactly four files: one Sponsor page handler/template, its tests, one route-registration line, and the dashboard link/template adjustment.
+- no Node assignment, weighted/sticky allocation, Campaign routing, Telemt ad-tag projection, Node compatibility/Middle Proxy enforcement, Sponsor statistics, Bot Admin Sponsor UI or Sponsor audit mutation was added.
+- candidate `b16c08a5adcfdcf9a3ddaba9b6d9e5d85ab862c0` passed Format, Vet, full Go tests, installer syntax/unit tests, Docker prerequisites, and Telemt E2E/rerun in CI `34518089493`.
 
 ## Supplied source hashes
 
@@ -75,23 +77,23 @@ Telemt `3.5.7`, upstream commit `4ca7418442478cd92f9e861c21977a81b249efc8`.
 
 ## Active stage
 
-### Stage 8C — Web Panel Sponsor management surface — ACTIVE
+### Stage 9A — Proxy Node identity/config persistence primitives — ACTIVE
 
-Roadmap basis: Phase 5 Web Panel explicitly includes sponsors, and the repository already has authenticated server-rendered Web Panel primitives. CP-036 provides the authoritative Sponsor CRUD API, so this milestone adds only the smallest functional Web management surface without inventing Sponsor assignment semantics.
+Roadmap basis: Web Panel explicitly includes Nodes; each Node has identity/network/configuration fields; the schema should be Multi-Node/Relay-ready from day one; Sponsor Profiles later require Node assignment. The current runtime and compose topology still configure one global Telemt endpoint, so this milestone introduces authoritative Node metadata only and does not switch runtime routing.
 
 Scope only:
-- add an authenticated `/sponsors` Web page reachable from the existing dashboard;
-- render current Sponsor Profiles and provide create/edit/delete controls for CP-036 fields only;
-- reuse the existing session-derived CSRF token and CP-036 API endpoints for mutations rather than duplicating Sponsor business rules in page handlers;
-- preserve no-store behavior and safe HTML/template escaping;
-- no Node assignment, weighted/sticky allocation, Campaign routing, Telemt ad-tag projection, Node compatibility/Middle Proxy enforcement, Sponsor statistics, Bot Admin Sponsor UI or Sponsor audit mutation in 8C.
+- add the smallest additive `proxy_nodes` persistence/domain model for stable Node identity/configuration: ID, node type (`proxy`/`relay`), name, region, host/IP, public host, MTProto port, internal API endpoint, enabled, and creation/update timestamps;
+- validate/canonicalize names/regions/hosts/ports/API endpoint without making network calls and without persisting API credentials or other secrets;
+- support create/get/list with deterministic ordering and safe duplicate identity handling;
+- keep live health/version/heartbeat/active-user/bandwidth fields out of authoritative static configuration until a telemetry contract exists;
+- do not change `TPROXY_TELEMT_API_URL`, compose topology, quota reconciliation routing, installer behavior, Relay parent/tunnel runtime, Sponsor assignment, FakeTLS/connection-mode/session-limit semantics, Web/Bot Node UI or Node lifecycle actions in 9A.
 
 Acceptance:
-- unauthenticated `/sponsors` redirects to login under the existing Web auth behavior;
-- authenticated page renders canonical Sponsor data and contains functional create/update/delete flows against the CP-036 API contract;
-- CSRF is not exposed outside the authenticated page and mutation requests include the existing session-derived `X-CSRF-Token`;
-- user-provided Sponsor fields are safely escaped when rendered;
-- existing Admin API, Bot, referral, proxy/quota and installer behavior remain unchanged;
+- multiple valid Proxy/Relay metadata records can coexist and round-trip deterministically;
+- malformed host/public-host/port/internal API endpoint, invalid type/name/region and duplicate stable identity fail before unintended mutation;
+- internal API endpoint rejects embedded credentials and fragments; no secret/token field exists in Node persistence;
+- migration is additive/backward-compatible and prior data/migrations remain intact/idempotent;
+- current single-Telemt runtime behavior remains unchanged;
 - format/vet/test and Docker/Telemt E2E remain green.
 
 ### Stage 7D2C — Exactly-once referral reward issuance — BLOCKED ON PRODUCT SEMANTICS
@@ -116,8 +118,8 @@ The roadmap requires configurable daily/weekly reward caps, cooldowns, blacklist
 - Eligibility approval is distinct from reward settlement: `pending + eligible_at` is approved but not rewarded.
 - Referral credit recipient semantics remain unresolved; do not issue referral rewards until repository/product evidence resolves inviter versus invitee versus both.
 - Sponsor Profile persistence is independent of assignment routing; assignment modes, sticky allocation, Telemt projection, compatibility and Middle Proxy enforcement remain separate later milestones.
-- No Node domain/table exists at CP-036, so Sponsor-to-Node assignment remains deferred rather than anchored to a fabricated identity model.
-- The existing Web Panel is server-rendered and minimal; 8C extends that existing surface rather than introducing a frontend framework.
+- The existing Web Panel remains server-rendered/minimal; no frontend framework is introduced for isolated management surfaces.
+- CP-037 still has no Node domain/table. Current config/compose use one global Telemt API endpoint/service, so Node metadata must land before multi-node runtime routing or Sponsor-to-Node assignment.
 
 ## Validation/failure log
 
@@ -128,7 +130,9 @@ The roadmap requires configurable daily/weekly reward caps, cooldowns, blacklist
 - 8A candidate `e1df28fd16d59b3c08eff86ee6b23d579eaf199f` passed full CI `34510107359` on the first candidate.
 - CP-035 docs promotion `55ee6d8128f4a63925ce54744c0cf7c98a73d3b8` passed full CI `34510460750`.
 - 8B candidate `2abc393bf144b0e269d166a544f1df3277649ffa` passed full CI `34510993603` on the first candidate.
+- CP-036 docs promotion `c1d93e7202a5afb34faf6f307ad92761e7f541b7` passed full CI `34517423137`.
+- 8C candidate `b16c08a5adcfdcf9a3ddaba9b6d9e5d85ab862c0` passed full CI `34518089493` on the first candidate.
 
 ## Current next action
 
-Resume from CP-036. Verify the CP-036 docs-head CI, then implement only Stage 8C: authenticated server-rendered Sponsor management page backed by the existing CP-036 API. Do not implement Sponsor assignment, Telemt projection, Bot Admin Sponsor UI or new Sponsor business semantics in this milestone.
+Resume from CP-037. Verify the CP-037 docs-head CI, then implement only Stage 9A additive Proxy Node identity/config persistence/domain primitives. Do not change current single-Telemt runtime routing, installer/compose, Sponsor assignment, Node telemetry/lifecycle actions, or blocked referral reward semantics in this milestone.
