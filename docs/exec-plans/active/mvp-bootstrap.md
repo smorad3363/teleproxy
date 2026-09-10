@@ -3,7 +3,7 @@
 Status: ACTIVE
 Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
-Latest verified checkpoint: `4b8ea6ebd16d8499f0a3409d1962cddc4b014bac`
+Latest verified checkpoint: `23a9eb92fade84b66aa6ec7f4cce96f37de21325`
 
 ## Purpose
 
@@ -41,17 +41,20 @@ On interruption: read this plan; compare branch head with `Latest verified check
 - Stage 6D2B2A — durable reconciliation journal + member snapshot — COMPLETE. `2cc686fa1da66b8cf3b37c1a6565d0bbb94520bf`; CI `34452322294` PASS.
 - Stage 6D2B2B — atomic usage accounting — COMPLETE. `cdde3bfb7a953d3be619e7d82204790dd2b6182e`; CI `34453311029` PASS.
 - Stage 6D2B2C1 — durable fail-closed phases — COMPLETE. `4b8ea6ebd16d8499f0a3409d1962cddc4b014bac`; CI `34454816438` PASS.
+- Stage 6D2B2C2 — callable crash-safe Telemt reconciliation orchestrator — COMPLETE. `23a9eb92fade84b66aa6ec7f4cce96f37de21325`; CI `34456452874` PASS.
 
-### Stage 6D2B2C1 implemented
+### Stage 6D2B2C2 implemented
 
-- explicit persisted phases: `applying`, `active`, `blocking`, `blocked`, `resetting`, `enabling`
-- strict allowed transition graph with generation+expected-phase compare-and-swap
-- stale generation/phase and unsupported transitions cannot advance state
-- `PrepareProjection` can replace a pre-apply snapshot or create the post-reset generation, but cannot bypass an `active` projection directly
-- unknown stored phases are rejected as invalid state
-- usage accounting is allowed in `active` and `blocked` only; its baseline CAS uses the observed phase rather than hard-coding `active`
-- focused tests cover transition graph, stale CAS, re-projection gate, blocked accounting and unknown-phase rejection
-- pinned Telemt source confirms disabling a user cancels active sessions, making disable suitable for fail-closed freezing before final accounting
+- dedicated `internal/quotareconcile` orchestration package keeps Credit Bucket domain separate from Telemt transport
+- existing projections freeze traffic by persisted `blocking`, Telemt disable, then persisted `blocked`
+- stable quota usage is observed and charged against the saved projection while the data-plane user is disabled
+- persisted `resetting` makes ambiguous reset requests retryable; reset epoch is used to recognize a successful prior reset
+- the next generation is prepared after reset, policy is applied idempotently, and policy state is verified before progression
+- no-credit projection uses quota `0`, never an unlimited/cleared quota
+- desired-enabled state is re-read from Control Plane before restoration; desired-disabled users remain disabled
+- initial no-journal bootstrap is also fail-closed: disable, reset/observe, prepare generation 1, apply, then conditionally enable
+- fake-driven tests cover normal path and ambiguous failures after disable/reset/apply/enable without double-accounting or extra quota
+- pinned Telemt source confirms disable cancels active sessions and quota reset writes `used_bytes=0` with a new reset epoch
 
 ## Supplied source hashes
 
@@ -68,32 +71,30 @@ Telemt 3.5.7:
 
 ## Active stage
 
-### Stage 6D2B2C2 — Callable crash-safe Telemt reconciliation orchestrator — ACTIVE
+### Stage 6D2B2C3 — Reconciliation trigger/wiring — ACTIVE
 
-Purpose: combine the separately verified journal, usage accounting and Telemt primitives into one resumable, fail-closed operation without introducing background scheduling yet.
+Purpose: expose the verified callable reconciler through bounded Control Plane lifecycle triggers without turning reconciliation into an uncontrolled background subsystem.
 
 Scope only:
-- add a dedicated orchestration package with a narrow Telemt interface and fake-driven tests
-- on an existing active projection: persist `blocking`, disable the Telemt user, persist `blocked`, read stable quota usage, account it, persist `resetting`, reset Telemt quota, observe the new reset epoch, prepare the next projection, apply quota/expiry, then restore current desired-enabled state through `enabling`/`active`
-- resume safely from `blocking`, `blocked`, `resetting`, `applying`, or `enabling` after a process/network failure
-- initial no-journal bootstrap must fail closed: disable first, reset/observe baseline while disabled, prepare generation 1, apply policy, then restore current desired state
-- re-read Control Plane desired-enabled state immediately before any re-enable decision
-- verify enough Telemt state after reset/apply to distinguish successful previous network mutation from a retry
-- no HTTP endpoint, timer, goroutine, startup loop or credit-grant wiring in this milestone
+- add a small reconciliation runner/manager with per-user deduplication and bounded global concurrency
+- wire startup reconciliation for existing proxy users when Telemt is configured
+- add an authenticated admin manual reconcile endpoint for one user
+- schedule the next finite `NextExpiry`/`NextStart` boundary after a successful reconciliation using in-process timers owned by the runner
+- cancel timers/work on Control Plane shutdown; do not block HTTP shutdown indefinitely
+- trigger reconciliation after desired-enabled lifecycle mutations only after their existing operation completes; do not rewrite reveal-once create/rotate semantics in this milestone
+- retain DB-first desired state and fail-closed Telemt behavior
+- no bot/referral/sponsor features, no broad UI redesign, no multi-node scheduler in this milestone
 
 Acceptance:
-- every external mutation is preceded/followed by a durable phase boundary sufficient for retry
-- a crash after successful disable/reset/apply/enable can resume without double-accounting or granting extra quota
-- usage is accounted only while data-plane user is disabled/frozen
-- reset epoch change is used to recognize a reset that succeeded before a crash
-- policy application is idempotent and verified before progressing
-- no-credit projection remains quota `0` (blocked), never unlimited
-- desired-disabled users are never re-enabled by reconciliation
-- Telemt failures leave a persisted fail-closed/resumable phase and do not alter Credit Bucket truth except through verified usage accounting
+- at most one reconciliation runs per proxy user at a time
+- global concurrency is bounded and configurable/default-safe
+- duplicate manual/startup/boundary triggers coalesce rather than race generations
+- shutdown cancels pending timers and contexts cleanly
+- boundary scheduling uses both `NextExpiry` and `NextStart`, selecting the nearest future boundary
+- manual endpoint requires admin session + CSRF and never returns Telemt secrets
+- Telemt unavailable/reconciliation failure leaves durable phase for retry and is represented by a narrow sync error code, not raw upstream text
+- startup with Telemt unconfigured continues without runner/network work
 - Go format/vet/test plus existing Docker/Telemt E2E remain green
-
-### Stage 6D2B2C3 — Reconciliation trigger/wiring — PENDING
-After C2 verification, wire initial/manual/boundary reconciliation into Control Plane lifecycle with bounded concurrency and shutdown behavior. Background scheduling is not part of C2.
 
 ## Checkpoints
 
@@ -112,8 +113,9 @@ After C2 verification, wire initial/manual/boundary reconciliation into Control 
 - CP-013 durable projection journal: `2cc686fa1da66b8cf3b37c1a6565d0bbb94520bf`, CI `34452322294`
 - CP-014 atomic usage accounting: `cdde3bfb7a953d3be619e7d82204790dd2b6182e`, CI `34453311029`
 - CP-015 durable reconciliation phases: `4b8ea6ebd16d8499f0a3409d1962cddc4b014bac`, CI `34454816438`
+- CP-016 callable crash-safe reconciler: `23a9eb92fade84b66aa6ec7f4cce96f37de21325`, CI `34456452874`
 
-Recovery point: CP-015. If interrupted during C2, inspect every commit/file after CP-015 and repair only the callable reconciliation orchestrator before adding triggers, timers, bot/referral/sponsor or UI expansion.
+Recovery point: CP-016. If interrupted during C3, inspect every commit/file after CP-016 and repair only reconciliation trigger/wiring before bot/referral/sponsor/UI expansion.
 
 ## Important decisions/discoveries
 
@@ -123,8 +125,9 @@ Recovery point: CP-015. If interrupted during C2, inspect every commit/file afte
 - Credit Bucket ledger is authoritative; Telemt is only an enforcement projection.
 - Telemt quota is persistent absolute `used_bytes` since reset; quota `0` blocks admission.
 - Each applied projection retains exact member allowances/order for historical charging after expiry/revocation.
-- Telemt disable cancels active sessions as well as blocking new admission; reconciliation therefore freezes traffic by disable before final usage observation.
+- Telemt disable cancels active sessions as well as blocking new admission; reconciliation freezes traffic by disable before final usage observation.
 - Cross-system reconciliation is fail-closed and persisted by phase; SQLite + Telemt are never treated as one transaction.
+- C2 is callable only; scheduling is deliberately deferred to C3 so crash-safety was verified independently from concurrency/timer behavior.
 
 ## Validation/failure log
 
@@ -136,9 +139,10 @@ Recovery point: CP-015. If interrupted during C2, inspect every commit/file afte
 - Stage 6D2B1 `86090aba...`, CI `34449178722`: PASS but superseded after self-review found missing future-start boundary; repaired at CP-012.
 - Stage 6D2B2A intermediate `44b3dc76...`, CI `34452143936`: migration-count failure from partial publication; no reset/force. Final `2cc686fa...`, CI `34452322294`: PASS; CP-013.
 - Stage 6D2B2B `cdde3bfb...`, CI `34453311029`: PASS; CP-014.
-- Stage 6D2B2C1 `4b8ea6eb...`, CI `34454816438`: PASS for format/vet/test and installer/Telemt E2E; CP-015.
+- Stage 6D2B2C1 `4b8ea6eb...`, CI `34454816438`: PASS; CP-015.
+- Stage 6D2B2C2 `23a9eb92...`, CI `34456452874`: PASS for Go and installer/Telemt E2E; CP-016.
 - Full local Go suite remains unavailable in the container because external module DNS is unavailable; GitHub CI is authoritative. Local gofmt/SQL checks are supplementary.
 
 ## Current next action
 
-Implement only Stage 6D2B2C2 from CP-015: callable fake-tested crash-safe reconciliation orchestration. Do not add scheduling or lifecycle wiring until C2 is separately verified.
+Implement only Stage 6D2B2C3 from CP-016: bounded/coalescing runner, startup/manual/boundary triggers, lifecycle/shutdown wiring, focused tests, then full CI. Do not start bot/referral/sponsor or broad UI work until C3 is separately verified.
