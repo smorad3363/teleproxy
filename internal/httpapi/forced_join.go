@@ -30,6 +30,7 @@ func NewWithProxyServicesAndForcedJoin(db *sql.DB, options Options, client *tele
 	s.registerForcedJoinRoutes()
 	s.registerReferralSettingsRoutes()
 	s.registerSponsorRoutes()
+	s.registerProxyNodeRoutes()
 	return s
 }
 
