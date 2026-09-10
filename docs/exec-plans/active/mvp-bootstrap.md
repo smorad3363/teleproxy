@@ -3,30 +3,16 @@
 Status: ACTIVE
 Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
-Latest verified checkpoint: `66353eee172412c270b8b50be3be2c5b18f04caf`
+Latest verified checkpoint: `7560b7b17c288b9789e98d8f790bbb10dd79a21d`
 
-## Purpose
+## Purpose and recovery
 
-Build Teleproxy incrementally from the supplied roadmap while keeping every milestone secure, independently verifiable, and recoverable from Git + this file without relying on chat history.
+Build Teleproxy incrementally from the supplied roadmap. On interruption, start from this file, compare branch head with `Latest verified checkpoint`, inspect every later commit/file/CI result, repair the active partial milestone, then continue. Never reset/clean/force over unrelated work.
 
-## Non-negotiable requirements
+Non-negotiable: Control Plane and Telemt lifecycles remain independent; SQLite WAL/NORMAL is authoritative Control Plane state; Credit Buckets are authoritative quota/reward state; Telemt quota/expiry is only an enforcement projection; plaintext admin/API/Bot/webhook/MTProto secrets are never logged or persisted by Control Plane; DB changes are additive/backward compatible.
 
-- Control Plane and Proxy Data Plane have independent lifecycles.
-- Go + lightweight HTTP + SQLite for Control Plane; Telemt remains an external data-plane component.
-- Docker-first installer is rerun-safe and does not expose the Telemt API on the host.
-- No Docker socket in the Web App.
-- No plaintext passwords, session/API/MTProto secrets, bot tokens, webhook secrets, or private keys in logs/state.
-- Proxy-user plaintext secrets are never persisted by Control Plane.
-- Desired state is persisted before data-plane reconciliation.
-- Credit Buckets with independent expiry are authoritative business state; Telemt quota/expiry is only an enforcement projection.
+## Verified checkpoints
 
-## Recovery protocol
-
-On interruption: read this plan; compare branch head with `Latest verified checkpoint`; inspect every later commit/file and CI result; repair the active partial milestone before starting another one; never reset/clean/force over unrelated work.
-
-## Completed checkpoints
-
-- Stage 1 — Repository foundation — PARTIAL. Architecture/security/reliability docs, plan, branch and CI exist. Remaining exact-byte root mirrors of supplied `AGENTS.md`, `ROADMAP_FA.md`, `ROADMAP_EN.md`; never commit partial mirrors.
 - CP-002 CI foundation: `084d4a1256a6b28412d9457f6568a4138e09c83c`, CI `34419759826` PASS.
 - CP-003 persistence/admin: `5798075de40d2f966d8546a18e6fa450d7142f90`, CI `34420104043` PASS.
 - CP-004 Web auth: `2e83b4770dd8e26fc5c0ebcca8dee6aa51111254`, CI `34420655852` PASS.
@@ -37,27 +23,28 @@ On interruption: read this plan; compare branch head with `Latest verified check
 - CP-009 authenticated lifecycle API: `24cec6f875fb5f56bfb97d8159d8fa2ac3b8e533`, CI `34446509254` PASS.
 - CP-010 Telemt quota/expiry contract: `907d818300f9cdb01473fecacf0cd76bd8db1438`, CI `34447125904` PASS.
 - CP-011 Credit Bucket ledger: `50baa6572c01bf320ac475339cc82a6710438de8`, CI `34448520864` PASS.
-- CP-012 quota usage + pure projection: `1013aca4ea01456de043b3e98a74be4686532632`, CI `34449339437` PASS.
+- CP-012 quota usage + projection boundaries: `1013aca4ea01456de043b3e98a74be4686532632`, CI `34449339437` PASS.
 - CP-013 durable projection journal: `2cc686fa1da66b8cf3b37c1a6565d0bbb94520bf`, CI `34452322294` PASS.
 - CP-014 atomic usage accounting: `cdde3bfb7a953d3be619e7d82204790dd2b6182e`, CI `34453311029` PASS.
 - CP-015 durable reconciliation phases: `4b8ea6ebd16d8499f0a3409d1962cddc4b014bac`, CI `34454816438` PASS.
 - CP-016 callable crash-safe reconciler: `23a9eb92fade84b66aa6ec7f4cce96f37de21325`, CI `34456452874` PASS.
-- CP-017 bounded reconciliation runner core: `5505a1e981270f38474cfbaccb40a8abc23e50e9`, CI `34458886839` PASS.
-- CP-018 Control Plane reconciliation wiring: `3664c7ce93264b4036ee87a1862aa1ae3634c41a`, CI `34462985548` PASS.
-- CP-019 Telegram identity + idempotent start-gift: `a7f83236a797120d2f5f34d8201a7de73b0b959f`, CI `34463953470` PASS.
+- CP-017 bounded reconciliation runner: `5505a1e981270f38474cfbaccb40a8abc23e50e9`, CI `34458886839` PASS.
+- CP-018 reconciliation wiring: `3664c7ce93264b4036ee87a1862aa1ae3634c41a`, CI `34462985548` PASS.
+- CP-019 Telegram identity + idempotent start gift: `a7f83236a797120d2f5f34d8201a7de73b0b959f`, CI `34463953470` PASS.
 - CP-020 Telegram Bot API + safe start core: `0ee6a2c0651c1db150b6939341664b7ede203c38`, CI `34465039914` PASS.
-- CP-021 authenticated Telegram webhook wiring: `1c7068420ac34a9c5182878e7befeeb5629d8ffc`, CI `34468311092` PASS.
+- CP-021 authenticated Telegram webhook: `1c7068420ac34a9c5182878e7befeeb5629d8ffc`, CI `34468311092` PASS.
 - CP-022 durable Telemt provisioning ownership proof: `66353eee172412c270b8b50be3be2c5b18f04caf`, CI `34469442781` PASS.
+- CP-023 crash-safe Bot provisioning + link response: `7560b7b17c288b9789e98d8f790bbb10dd79a21d`, CI `34472531024` PASS.
 
-### CP-022 implemented
+### CP-023 implemented
 
-- additive migration 007 stores one provisioning journal per proxy user with phase, SHA-256 secret digest, narrow error code and timestamps; plaintext MTProto secrets are impossible to persist through this schema
-- provisioning attempts generate a cryptographically random 16-byte/32-hex secret in memory and persist only its digest before network create
-- Telemt client can create a user with a caller-supplied validated secret while legacy admin create behavior remains unchanged
-- validated Telemt links normalize classic/secure/TLS encodings back to the effective raw 32-hex secret for ownership comparison
-- ownership comparison is constant-time and produces an unforgeable package-private-backed `OwnershipProof`; `MarkOwned` requires that proof
-- prepared-attempt digest may be CAS-replaced only after Telemt non-existence is established, enabling crash-before-network recovery without adopting a pre-existing same-name user
-- migration 007 has upgrade/rerun/cascade coverage
+- `/start` provisions the mapped Telemt user disabled, never directly enables it, then queues the verified quota reconciler.
+- Provisioning is serialized per username in-process and guarded durably by CP-022 CAS journal state.
+- A pre-existing same-name Telemt user is adopted only when a prepared secret digest is proved from validated Telemt links; mismatches become durable collision state.
+- Ambiguous create failures recover by GET+proof without a second create. A definitively deleted previously-owned user can be safely reprovisioned with a new in-memory secret/digest.
+- Historical provisioning digest is not revalidated after intentional admin secret rotation; owned users continue by Control Plane identity and current Telemt view.
+- Only validated proxy links are returned transiently to Telegram; no plaintext secret/link is stored in SQLite.
+- Bot-enabled startup requires configured Telemt + quota runner; default installation without Bot remains unaffected.
 
 ## Supplied source hashes
 
@@ -66,75 +53,68 @@ Rechecked from mounted originals on 2026-09-10:
 - ROADMAP_EN: `90605c0e08bd960b02d4569e49995dd55c2ece1fb37ca6a09d37c66350114009`
 - ROADMAP_FA: `a9219b597eac4a2d9c73f5ae1013b25a3e15a862266665fcf5de3e2aae174fab`
 
+Stage 1 root exact-byte mirrors remain PARTIAL because prior GitHub transport could not safely preserve the large supplied files. Do not commit partial/corrupted mirrors.
+
 ## Pinned Telemt
 
-Telemt 3.5.7, upstream commit `4ca7418442478cd92f9e861c21977a81b249efc8`:
+Telemt `3.5.7`, upstream commit `4ca7418442478cd92f9e861c21977a81b249efc8`.
 - amd64 musl SHA-256 `db26e363bb98f11a02a7fd6d0df455f4987af5cdb2a5897da7f6fb8d613fbf41`
 - arm64 musl SHA-256 `8730080863f8f8ed52ee11f9c51c4daa30b3044fc842538bf6dd8c91ac0572c1`
 
 ## Active stage
 
-### Stage 7B3B — Bot proxy provisioning + link response — ACTIVE
+### Stage 7C1 — Forced Join domain + membership-gated start — ACTIVE
 
-Purpose: compose CP-019 Telegram identity, CP-022 ownership proof and CP-017 quota runner into a crash-safe `/start` provisioning flow without persisting MTProto secrets.
+Roadmap basis: `/start` resolves Telegram identity, checks Forced Join before initial gift/proxy assignment, and Forced Join can contain one or more configurable Telegram channels.
 
 Scope only:
-- add a testable Bot provisioning application service; serialize one proxy username per process while DB/CAS journal remains the durable cross-retry guard
-- for an owned journal, verify the Telemt user exists and continue without requiring the historical plaintext secret
-- for a prepared journal, GET Telemt first: if found, prove ownership from links before marking owned; if absent, CAS-replace stale digest with a new in-memory attempt, create disabled with caller secret, verify links, then mark owned
-- ambiguous create failures remain `prepared`; retry must GET+prove before any further create
-- a pre-existing Telemt user without a matching prepared digest is collision/fail-closed, never adopted
-- after ownership is established, trigger quota reconciliation; do not directly enable the user
-- retrieve validated Telemt links only after reconciliation has been triggered; expose status/link text through the Bot response without storing link or plaintext secret in SQLite
-- wire the service into the authenticated webhook while keeping unsupported commands ignored and outbound Bot API ambiguity non-destructive
-- no Forced Join, referrals/rewards, sponsor/Admin UI or webhook registration in this milestone
+- additive required-channel schema/store with deterministic ordering, enabled state, Telegram chat reference, display name and safe join URL; no Bot token/secrets in DB
+- add bounded `getChatMember` support to the existing Telegram client; accept `creator`, `administrator`, `member`, and `restricted` only when `is_member=true`; treat `left`/`kicked` as not joined; malformed/unknown status is fail-closed
+- because Telegram guarantees `getChatMember` for other users only when the Bot is an administrator, membership API errors must never bypass Forced Join
+- refactor Telegram start domain compatibly into `Resolve identity` and idempotent `EnsureStartGift`; existing `telegramuser.Start` remains a compatibility wrapper
+- gated Bot flow: resolve identity -> check every enabled required channel -> if any missing/unverifiable, do not grant initial gift and do not provision proxy -> after successful recheck, grant the gift exactly once and continue CP-023 provisioning
+- return structured missing-channel data for user messaging; no broad Admin UI or referral logic in C1
 
 Acceptance:
-- first `/start` creates Control Plane identity/gift, creates Telemt user disabled, establishes ownership proof, queues reconciliation and returns a safe status/link response
-- replay after success does not rotate/recreate secret
-- timeout after Telemt create is recoverable by GET+ownership proof without a second create
-- crash before network create can safely rotate the prepared digest only after GET proves absence
-- same-name Telemt collision never gets adopted
-- runner trigger failure leaves owned state recoverable and no direct enable occurs
-- concurrent same-user provisioning is serialized and converges to one Telemt user
-- Go format/vet/test and Docker/Telemt installer E2E remain green
+- a new non-member can create durable Telegram identity/proxy mapping but receives no Credit Bucket and no Telemt provisioning
+- after joining, replay grants exactly one start gift and provisions normally
+- member/admin/creator and restricted+is_member pass; left/kicked/restricted+false fail
+- Telegram API timeout/unauthorized/malformed result fails closed and does not grant/provision
+- multiple required channels all must pass; disabled channels are ignored
+- existing pre-Forced-Join users/gifts remain valid and migrations upgrade cleanly
+- format/vet/test and Docker/Telemt E2E remain green
 
-### Stage 7C — Forced Join — PENDING
-Configurable required channels, membership checks, manual recheck, and fail-safe user messaging.
+### Stage 7C2 — Forced Join configuration + manual recheck UX — PENDING
+Add authenticated admin CRUD for required channels plus Telegram join/recheck controls/messages. Keep callbacks authenticated by Telegram webhook context and make repeated recheck idempotent.
 
 ### Stage 7D — Referrals + rewards — PENDING
-Unique-per-invitee referral attribution, self-referral protection, idempotent reward creation and configurable reward/expiry/caps; integrate with Credit Buckets.
+Unique-per-invitee attribution, self-referral protection, idempotent reward Credit Buckets, configurable reward/expiry/caps, and Forced-Join eligibility integration.
 
-## Important decisions/discoveries
+## Important decisions
 
-- Credit Bucket ledger is authoritative; Telemt is only an enforcement projection.
-- Telemt disable cancels active sessions and blocks new admission; quota `0` means blocked.
-- SQLite stays single-connection in MVP so connection-scoped PRAGMAs remain reliable.
-- Bot token and webhook secret are protected runtime files, not ordinary SQLite settings.
-- Telemt user views reconstruct `tg://proxy` links from Telemt-managed user secrets.
-- Upstream CreateUser accepts an optional caller-provided 32-hex secret. Teleproxy can choose a random secret in memory, persist only its digest, and prove an ambiguous create later from Telemt-generated links.
-- A provisioning ownership journal proves creation identity; it must not be treated as a permanent assertion about the current secret after an intentional admin secret rotation. Once phase is `owned`, later normal operations identify the user by Control Plane mapping rather than re-validating the historical digest.
+- Credit Buckets are the source of truth; Telemt is only enforcement projection.
+- Telemt disable cancels active sessions and quota `0` blocks traffic.
+- Bot token and webhook secret are protected runtime files, never ordinary SQLite settings.
+- Telemt user view reconstructs proxy links from Telemt-managed secret; Control Plane does not persist MTProto plaintext.
+- Telegram `getChatMember` for another user is only guaranteed when the Bot is an administrator in the target chat/channel; Forced Join therefore fails closed on API/configuration errors.
+- Forced Join must gate gift/provisioning, not merely hide the final link. Existing `telegramuser.Start` will remain as a compatibility wrapper while the Bot path uses the split gated flow.
 
 ## Validation/failure log
 
-- Stage 5 `c1cde407...`, CI `34426475546`: bootstrap secret mode issue; strict validation kept and ownership/mode fixed.
-- Stage 5 `34b455b0...`, CI `34426870772`: E2E path harness bug; production unchanged.
-- Stage 6A `39349dcf...`, CI `34437891406`: unreliable port assertion; replaced with Docker HostConfig inspection.
-- Stage 6A `91722c95...`, CI `34438040249`: protected token harness read fixed; token remained 0600.
-- Stage 6B `0fbb8d72...`, CI `34438839369`: format-only failure; repaired at CP-007.
-- Stage 6D2B1 `86090aba...`, CI `34449178722`: PASS but superseded after self-review found missing future-start boundary; repaired at CP-012.
-- Stage 6D2B2A `44b3dc76...`, CI `34452143936`: partial migration publication caused migration-count failure; final passed at CP-013; no force/reset.
-- C3A `8040d4e3...`, CI `34458741101`: test helper used in-memory SQLite incompatible with required WAL; production validation unchanged.
-- C3B `470ecb81...`, CI `34459855904`: two misspelled HTTP status constants caused vet failure; repaired without behavior change.
-- 7A publish intermediate `bcac80e9...`: accidental README commit while intending ref move; no reset/force; next commit restored exact prior README blob and net feature diff was clean.
-- 7A `a7f83236...`, CI `34463953470`: PASS; CP-019.
-- 7B1 `0ee6a2c0...`, CI `34465039914`: PASS; CP-020.
-- 7B2 local pre-publish test caught body-cap status ambiguity; changed to read `limit+1` first so oversized bodies deterministically return 413.
-- 7B2 `1c706842...`, CI `34468311092`: PASS; CP-021.
-- 7B3A `f52aa0b6...`, CI `34469352217`: format-only failure in manually transferred `create_with_secret_test.go`; production files were unchanged.
-- 7B3A repair `66353eee...`, CI `34469442781`: Go + installer/Telemt E2E PASS; CP-022.
-- Full local Go suite remains unavailable in the container because external module DNS is unavailable; GitHub CI is authoritative. Standard-library-only slices are locally tested when possible.
+- Stage 5 `c1cde407...` secret mode and `34b455b0...` E2E harness failures repaired without weakening production validation.
+- Stage 6A `39349dcf...` port assertion and `91722c95...` protected-token harness repaired.
+- Stage 6B `0fbb8d72...` format-only failure repaired at CP-007.
+- Stage 6D2B1 `86090aba...` passed but was superseded after self-review found missing future-start boundary; CP-012 repaired it.
+- Stage 6D2B2A `44b3dc76...` partial migration publication caused migration-count failure; final CP-013 used no reset/force.
+- C3A `8040d4e3...` test used in-memory SQLite incompatible with required WAL; production unchanged.
+- C3B `470ecb81...` misspelled HTTP constant caused vet failure; repaired.
+- 7A intermediate `bcac80e9...` accidentally touched README; exact prior blob restored in next fast-forward, no reset/force.
+- 7B2 local test caught body-cap ambiguity before publish; oversized bodies now deterministically return 413.
+- 7B3A `f52aa0b6...`, CI `34469352217`: format-only test transfer failure; repair `66353eee...` passed.
+- 7B3B `264c1f1f...`, CI `34472413695`: unused test import after safe test-file split caused vet failure; production unchanged. Repair `7560b7b1...`, CI `34472531024`, PASS.
+- An unattached malformed binary Git blob and an unattached dry webhook-diff commit were created during safe publishing checks; neither was ever referenced by the branch and neither affects repository state.
+- Full local Go suite remains unavailable because external module DNS is blocked in the container; GitHub CI is authoritative.
 
 ## Current next action
 
-Implement only Stage 7B3B from CP-022: crash-safe provisioning application orchestration, quota-runner trigger, validated link/status response, and narrow webhook wiring. Do not start Forced Join or referral logic until B3B is separately verified.
+Implement only Stage 7C1 from CP-023. Do not start admin configuration UX, callbacks, or referrals until C1 is separately verified.
