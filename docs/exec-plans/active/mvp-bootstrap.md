@@ -3,13 +3,13 @@
 Status: ACTIVE
 Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
-Latest verified checkpoint: `dd0656d8ea1725ab4a9de68899ae474031590ee2`
+Latest verified checkpoint: `bad15c07f439ff3d90945b08fb75eb9690160c58`
 
-## Purpose and recovery
+## Recovery contract
 
-Build Teleproxy incrementally from the supplied roadmap. On interruption, start from this file, compare branch head with `Latest verified checkpoint`, inspect every later commit/file/CI result, repair the active partial milestone, then continue. Never reset/clean/force over unrelated work.
+Resume from `Latest verified checkpoint`, then inspect every later branch commit/file and its CI result before writing. Repair the active partial milestone first. Never reset, clean, force-push, or overwrite unrelated work.
 
-Non-negotiable: Control Plane and Telemt lifecycles remain independent; SQLite WAL/NORMAL is authoritative Control Plane state; Credit Buckets are authoritative quota/reward state; Telemt quota/expiry is only an enforcement projection; plaintext admin/API/Bot/webhook/MTProto secrets are never logged or persisted by Control Plane; DB changes are additive/backward compatible.
+Non-negotiable architecture: SQLite WAL/NORMAL is authoritative Control Plane state; Credit Buckets are authoritative quota/reward state; Telemt quota/expiry is only an enforcement projection; Control Plane and Telemt lifecycles remain independent; plaintext admin/API/Bot/webhook/MTProto secrets are never logged or persisted by Control Plane; DB migrations are additive/backward-compatible.
 
 ## Verified checkpoints
 
@@ -38,15 +38,17 @@ Non-negotiable: Control Plane and Telemt lifecycles remain independent; SQLite W
 - CP-024 Forced Join channel domain: `fbc825783409aa01908528d29afca9320edc7916`, CI `34475645129` PASS.
 - CP-025 Telegram membership + split start primitives: `8e172246c3f7c4c656ead73424b1fcc9a3330d77`, CI `34477880363` PASS.
 - CP-026 membership-gated Telegram start: `dd0656d8ea1725ab4a9de68899ae474031590ee2`, CI `34480254706` PASS.
+- CP-027 Forced Join authenticated Admin CRUD API: `bad15c07f439ff3d90945b08fb75eb9690160c58`, CI `34482353102` PASS.
 
-### CP-026 implemented
+### CP-027 implemented
 
-- production Bot `/start` now follows `Resolve identity -> CheckRequired -> EnsureStartGift -> Balance -> CP-023 provisioning`.
-- a non-member may receive durable Telegram/proxy identity only; no start-gift Credit Bucket is granted and no Telemt provisioning call is made until all enabled required channels pass.
-- membership lookup errors remain fail-closed and return a retryable processing failure without granting credit/provisioning.
-- missing required channels are returned in deterministic configured order with safe display name/join URL/custom text; response rendering is bounded to Telegram message size.
-- zero required channels preserves the previously verified provisioning path, and legacy constructors that intentionally do not use Forced Join remain compatible.
-- production wiring reuses the same protected Bot client for membership checks; no additional token/client or secret persistence was introduced.
+- `forcedjoin` management domain now exposes validated list-all/get/update/delete while preserving CP-024 read-time validation and deterministic `position,id` ordering.
+- duplicate Telegram chat references are typed `ErrConflict`; missing channel IDs are typed `ErrNotFound`; API code never parses raw SQLite error text.
+- authenticated admin routes: `GET/POST /api/forced-join/channels`, `PUT/DELETE /api/forced-join/channels/{id}`.
+- reads require an administrator session; all mutations additionally require existing `X-CSRF-Token` validation.
+- create/update use one shared domain validator, bounded 16 KiB JSON, unknown-field rejection, explicit enabled/required/position fields, and shared Problem Details error responses.
+- list includes disabled/optional records for management and returns deterministic JSON `[]` when empty; update preserves identity/created_at; delete affects only the selected row.
+- production constructor now registers the management routes; no migration, Bot secret, callback, referral, or entitlement behavior changed.
 
 ## Supplied source hashes
 
@@ -55,7 +57,7 @@ Rechecked from mounted originals on 2026-09-10:
 - ROADMAP_EN: `90605c0e08bd960b02d4569e49995dd55c2ece1fb37ca6a09d37c66350114009`
 - ROADMAP_FA: `a9219b597eac4a2d9c73f5ae1013b25a3e15a862266665fcf5de3e2aae174fab`
 
-Stage 1 root exact-byte mirrors remain PARTIAL because prior GitHub transport could not safely preserve the large supplied files. Do not commit partial/corrupted mirrors.
+Stage 1 exact-byte root mirrors remain PARTIAL because prior GitHub transport could not safely preserve the large supplied files. Do not commit partial/corrupted mirrors.
 
 ## Pinned Telemt
 
@@ -65,62 +67,61 @@ Telemt `3.5.7`, upstream commit `4ca7418442478cd92f9e861c21977a81b249efc8`.
 
 ## Active stage
 
-### Stage 7C2A — Forced Join authenticated Admin CRUD API — ACTIVE
+### Stage 7C2B — Telegram manual Forced Join recheck UX — ACTIVE
 
-Roadmap basis: Forced Join must be manageable and supports multiple channels, enabled/disabled, required/optional campaign state, ordering and custom text. This milestone exposes that existing CP-024 domain through the authenticated Control Plane API only.
+Roadmap basis: Forced Join supports custom join messaging and a manual membership recheck. Build this only on the verified CP-026 gated start and CP-027 management API.
 
 Scope only:
-- extend `internal/forcedjoin` with validated list-all/get/update/delete operations while preserving read-time validation and deterministic ordering
-- add authenticated Admin API routes for list/create/update/delete Forced Join channels
-- all mutations require the existing admin session + `X-CSRF-Token`; reads require an authenticated admin session
-- JSON bodies are bounded, reject unknown fields, and map validation/not-found/conflict/internal failures to stable Problem Details codes without leaking SQLite/internal errors
-- deletion is explicit and affects only the selected channel; no broad settings rewrite or destructive migration
-- no Bot callbacks, recheck buttons, referral/reward logic, broad Web UI, or new secrets in C2A
+- add minimal inline-keyboard support to Bot `sendMessage` so missing-channel responses can show one safe Telegram join URL button per missing channel plus one recheck callback button
+- extend `Update` only with the CallbackQuery fields needed for recheck; callback data is a fixed bounded non-secret token, never an entitlement, Telegram ID, proxy username, or secret
+- process recheck only from an authenticated Telegram webhook update, using `callback_query.from.id` as the authoritative user identity and the callback message private chat as the destination
+- add `answerCallbackQuery` support; always answer handled callback queries so Telegram clients do not remain in loading state
+- reuse the same Forced Join gate and idempotent `EnsureStartGift`/CP-023 provisioning path; repeated callbacks cannot duplicate the initial gift or provisioning ownership
+- malformed/forged callback data, missing message context, group/inline-only callbacks, bot senders, or mismatched chat/user identity must not grant/provision
+- membership API errors remain fail-closed; user may retry later
+- no edit-message requirement, referral/reward logic, broad Bot menus, or new DB migration/secrets in C2B
 
 Acceptance:
-- authenticated list returns all channel records in deterministic `position,id` order, including disabled/optional records for management
-- create/update enforce the same chat reference, Telegram URL, display/custom-text and position validation as CP-024
-- update can intentionally toggle enabled/required and reorder channels without replacing identity/timestamps incorrectly
-- delete returns not-found safely and does not affect unrelated channels
-- unauthenticated requests return 401; mutation without valid CSRF returns 403
-- malformed/oversized/unknown-field JSON is rejected with the shared Problem Details contract
+- missing-channel `/start` sends join URL controls and a recheck control without granting/provisioning
+- after membership becomes valid, recheck grants exactly the existing one-time start gift and continues verified provisioning
+- replaying the same callback is idempotent
+- callback query is answered on handled success/missing-membership/error paths; Bot API failures are sanitized and token-bearing URLs never leak
+- callback data stays within Telegram's 1-64 byte limit and contains no user/resource entitlement data
+- unsafe callback contexts do not mutate credit/provisioning state
+- zero required channels and ordinary `/start` behavior remain unchanged
 - format/vet/test and Docker/Telemt E2E remain green
-
-### Stage 7C2B — Telegram manual recheck UX — PENDING
-Add join/recheck controls/messages on top of the verified gated `/start`. Recheck must reuse Telegram webhook authentication context and remain idempotent: repeated checks can only grant the existing one-time start gift once and cannot duplicate provisioning ownership. Keep callback payloads bounded and non-secret.
 
 ### Stage 7D — Referrals + rewards — PENDING
 Unique-per-invitee attribution, self-referral protection, idempotent reward Credit Buckets, configurable reward/expiry/caps, and Forced-Join eligibility integration.
 
 ## Important decisions
 
-- Credit Buckets are the source of truth; Telemt is only enforcement projection.
-- Telemt disable cancels active sessions and quota `0` blocks traffic.
+- Credit Buckets are source of truth; Telemt is only enforcement projection.
+- Telemt disable cancels active sessions; quota `0` blocks traffic.
 - Bot token and webhook secret are protected runtime files, never ordinary SQLite settings.
 - Telemt user view reconstructs proxy links from Telemt-managed secret; Control Plane does not persist MTProto plaintext.
-- Telegram `getChatMember` for another user is only guaranteed when the Bot is an administrator in the target chat/channel; Forced Join therefore fails closed on API/configuration errors.
-- Forced Join gates the gift and proxy provisioning, not merely the final link. A non-member may have durable identity state but no Credit Bucket or Telemt user.
-- Forced Join management must reuse the authoritative domain validation rather than implement separate API-only validation rules.
+- Telegram `getChatMember` failures fail closed because membership for another user depends on correct Bot/channel permissions.
+- Forced Join gates gift and provisioning, not just link visibility; identity may exist with zero credit.
+- Forced Join management reuses authoritative domain validation.
+- Manual recheck callback data is fixed/non-secret; authoritative identity always comes from the Telegram update, not callback data.
 
 ## Validation/failure log
 
-- Stage 5 `c1cde407...` secret mode and `34b455b0...` E2E harness failures repaired without weakening production validation.
-- Stage 6A `39349dcf...` port assertion and `91722c95...` protected-token harness repaired.
-- Stage 6B `0fbb8d72...` format-only failure repaired at CP-007.
-- Stage 6D2B1 `86090aba...` passed but was superseded after self-review found missing future-start boundary; CP-012 repaired it.
-- Stage 6D2B2A `44b3dc76...` partial migration publication caused migration-count failure; final CP-013 used no reset/force.
-- C3A `8040d4e3...` test used in-memory SQLite incompatible with required WAL; production unchanged.
-- C3B `470ecb81...` misspelled HTTP constant caused vet failure; repaired.
-- 7A intermediate `bcac80e9...` accidentally touched README; exact prior blob restored in next fast-forward, no reset/force.
+- Stage 5 secret-mode/E2E harness failures repaired without weakening production validation.
+- Stage 6A port assertion/protected-token harness failures repaired.
+- Stage 6B format-only failure repaired at CP-007.
+- CP-012 superseded an otherwise-passing candidate after self-review found a missing future-start boundary.
+- CP-013 repaired a partial migration-count publication without reset/force.
+- C3A in-memory SQLite test was incompatible with required WAL; production unchanged.
+- C3B misspelled HTTP constant caused vet failure; repaired.
+- 7A accidental README intermediate commit was neutralized by restoring the exact prior blob in the next fast-forward, no reset/force.
 - 7B2 local test caught body-cap ambiguity before publish; oversized bodies now deterministically return 413.
-- 7B3A `f52aa0b6...`, CI `34469352217`: format-only test transfer failure; repair `66353eee...` passed.
-- 7B3B `264c1f1f...`, CI `34472413695`: unused test import after safe test-file split caused vet failure; production unchanged. Repair `7560b7b1...`, CI `34472531024`, PASS.
-- CP-024 local pre-publish hardening rejected explicit ports in Telegram join URLs; SQLite migration smoke passed. CI `34475645129` passed.
-- CP-025 pre-publish isolated compile caught unsupported `testing.T.Context`; tests were repaired to `context.Background()` before branch publication. All four published blob SHAs matched local staging; CI `34477880363` passed.
-- CP-026 published exactly four scoped files; CI `34480254706` passed format/vet/test and Docker/Telemt installer E2E.
-- Unattached malformed/test Git objects created during earlier safe publishing checks were never referenced by the branch and do not affect repository state.
+- 7B3A format-only transfer failure and 7B3B unused test import were repaired; production semantics unchanged.
+- CP-024 hardened Telegram join URLs against explicit ports before publish.
+- CP-025 pre-publish compile caught unsupported `testing.T.Context`; repaired before branch publication.
+- C2A produced two unattached mismatched Git blobs during transfer checks; neither was referenced by a tree/branch. Final six published SHAs matched local staging and CI `34482353102` passed.
 - Full local Go suite remains unavailable because external module DNS is blocked in the container; GitHub CI is authoritative.
 
 ## Current next action
 
-Implement only Stage 7C2A from CP-026. Do not start Telegram callbacks/recheck UX or referrals until the authenticated Forced Join Admin CRUD API is separately verified.
+Implement only Stage 7C2B from CP-027. Do not start referrals/rewards until manual Forced Join recheck is separately verified.
