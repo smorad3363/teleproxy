@@ -127,9 +127,11 @@ func TestUserPageRendersEstablishedLifecycleControlsAndCSRF(t *testing.T) {
 		`data-proxy-username="` + resolved.User.ProxyUsername + `"`,
 		`data-proxy-action="disable"`,
 		`data-proxy-action="rotate-secret"`,
+		`data-proxy-action="reconcile"`,
 		`"X-CSRF-Token": csrf`,
 		`"/api/proxy/users/" + encodeURIComponent(username)`,
 		`window.location.reload()`,
+		`Quota reconciliation queued.`,
 		`Shown once. Save it now; it will not be shown again.`,
 		`value.textContent = secret`,
 		`.slice(0, 256)`,
@@ -174,7 +176,7 @@ func TestUserPageDoesNotGuessLifecycleTargetWithoutProxyUsername(t *testing.T) {
 	if !strings.Contains(body, `data-proxy-actions-unavailable`) || !strings.Contains(body, `data-proxy-username=""`) {
 		t.Fatalf("empty proxy username did not render safe unavailable state: %s", body)
 	}
-	for _, action := range []string{"enable", "disable", "rotate-secret"} {
+	for _, action := range []string{"enable", "disable", "rotate-secret", "reconcile"} {
 		if strings.Contains(body, `data-proxy-action="`+action+`"`) {
 			t.Fatalf("empty proxy username rendered %q lifecycle target: %s", action, body)
 		}

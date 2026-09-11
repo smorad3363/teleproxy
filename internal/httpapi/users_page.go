@@ -53,7 +53,7 @@ var userPageTemplate = template.Must(template.New("users").Funcs(template.FuncMa
 <thead><tr><th>Telegram ID</th><th>Proxy username</th><th>Enabled</th><th>Sync state</th><th>Last error</th><th>Available bytes</th><th>Nearest expiry</th><th>Referrals</th><th>Created at</th><th>Updated at</th><th>Actions</th></tr></thead>
 <tbody>
 {{range .Users}}
-<tr data-proxy-username="{{.ProxyUsername}}"><td class="tag">{{.TelegramID}}</td><td class="tag">{{.ProxyUsername}}</td><td>{{.DesiredEnabled}}</td><td>{{.SyncState}}</td><td class="tag">{{userErrorCode .LastErrorCode}}</td><td class="tag">{{.AvailableBytes}}</td><td>{{userOptionalTime .NearestExpiry}}</td><td class="tag">{{.ReferralCount}}</td><td>{{userTime .CreatedAt}}</td><td>{{userTime .UpdatedAt}}</td><td>{{if .ProxyUsername}}<div class="actions">{{if .DesiredEnabled}}<button type="button" data-proxy-action="disable">Disable</button>{{else}}<button type="button" data-proxy-action="enable">Enable</button>{{end}}<button type="button" data-proxy-action="rotate-secret">Rotate secret</button></div><p class="action-status" data-action-status role="status" aria-live="polite"></p><div class="secret-reveal" data-secret-reveal hidden><strong>Shown once. Save it now; it will not be shown again.</strong><code data-secret-value></code></div>{{else}}<span class="muted" data-proxy-actions-unavailable>Unavailable</span>{{end}}</td></tr>
+<tr data-proxy-username="{{.ProxyUsername}}"><td class="tag">{{.TelegramID}}</td><td class="tag">{{.ProxyUsername}}</td><td>{{.DesiredEnabled}}</td><td>{{.SyncState}}</td><td class="tag">{{userErrorCode .LastErrorCode}}</td><td class="tag">{{.AvailableBytes}}</td><td>{{userOptionalTime .NearestExpiry}}</td><td class="tag">{{.ReferralCount}}</td><td>{{userTime .CreatedAt}}</td><td>{{userTime .UpdatedAt}}</td><td>{{if .ProxyUsername}}<div class="actions">{{if .DesiredEnabled}}<button type="button" data-proxy-action="disable">Disable</button>{{else}}<button type="button" data-proxy-action="enable">Enable</button>{{end}}<button type="button" data-proxy-action="rotate-secret">Rotate secret</button><button type="button" data-proxy-action="reconcile">Reconcile quota</button></div><p class="action-status" data-action-status role="status" aria-live="polite"></p><div class="secret-reveal" data-secret-reveal hidden><strong>Shown once. Save it now; it will not be shown again.</strong><code data-secret-value></code></div>{{else}}<span class="muted" data-proxy-actions-unavailable>Unavailable</span>{{end}}</td></tr>
 {{end}}
 </tbody></table></div>
 {{else}}<p class="empty">No Telegram users yet.</p>{{end}}
@@ -65,7 +65,7 @@ var userPageTemplate = template.Must(template.New("users").Funcs(template.FuncMa
   const root = document.getElementById("user-admin");
   if (!root) return;
   const csrf = root.dataset.csrf || "";
-  const allowedActions = new Set(["enable", "disable", "rotate-secret"]);
+  const allowedActions = new Set(["enable", "disable", "rotate-secret", "reconcile"]);
 
   function setBusy(row, busy) {
     row.querySelectorAll("button[data-proxy-action]").forEach(function (button) {
@@ -120,6 +120,10 @@ var userPageTemplate = template.Must(template.New("users").Funcs(template.FuncMa
       });
       if (!response.ok) {
         setStatus(row, await problemText(response), true);
+        return;
+      }
+      if (action === "reconcile") {
+        setStatus(row, "Quota reconciliation queued.", false);
         return;
       }
       if (action === "rotate-secret") {
