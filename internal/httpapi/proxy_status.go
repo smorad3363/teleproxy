@@ -10,6 +10,7 @@ import (
 func NewWithProxyHealth(db *sql.DB, options Options, checker telemt.Checker) *Server {
 	s := New(db, options)
 	s.mux.HandleFunc("GET /api/system/proxy", s.handleProxyStatus(checker))
+	s.mux.HandleFunc("GET /system", s.handleSystemPage(checker))
 	return s
 }
 
