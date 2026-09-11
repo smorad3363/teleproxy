@@ -109,6 +109,10 @@ was published.
   Telemt E2E/rerun.
 - CP-067 promotion docs:
   `ed3bb7b33a5758b0bc5d0ec0bec0f9daf60eea98`, CI `34645693007` PASS.
+- Post-CP-067 recovery-state docs:
+  `3390e4189bb8ca6d4c7791a7b48b57f2245db84f`, CI `34646117924` PASS across both
+  jobs and all established Go, SQLite migration, ShellCheck, installer, Docker build,
+  Compose validation, and Telemt E2E/rerun gates.
 
 ## Explicit blockers
 
@@ -336,10 +340,47 @@ The remaining roadmap CI items were compared against the current repository prim
 No additional implementation milestone is scoped from these items until its tooling and
 acceptance contract are repository-defined or otherwise explicitly established.
 
+## Stage 11V — User inventory authoritative provisioning phase — SCOPED
+
+The roadmap asks User surfaces to expose secret-related status, but the repository has
+no authoritative generic "secret status" contract and this milestone must not invent
+one. The existing `proxy_user_provisioning.phase` field is already an authoritative,
+durable lifecycle contract with exactly the established `prepared`, `owned`, and
+`collision` values. Stage 11V exposes only that exact stored phase as a separate
+`provisioning_phase` read field.
+
+Intended code diff is exactly:
+- `internal/useradmin/list.go`
+- `internal/useradmin/list_test.go`
+- `internal/httpapi/users_test.go`
+- `internal/httpapi/users_page.go`
+- `internal/httpapi/users_page_test.go`
+
+The User inventory read model will LEFT JOIN the existing provisioning table by
+`proxy_user_id`, return JSON `provisioning_phase: null` when no durable provisioning row
+exists, and otherwise return only the exact stored phase after validating it against the
+three existing `proxyprovision.Phase` constants. The `/users` page will add a single
+`Provisioning phase` column that renders the exact phase literally, or the explicit safe
+text `not provisioned` when absent. Existing newest-first bounded pagination, exact
+Telegram/proxy filters, no-store behavior, lifecycle actions, CSRF behavior, Credit
+Bucket projection, referral count, and safe empty states remain unchanged.
+
+No secret digest or plaintext secret will be selected, serialized, rendered, logged, or
+otherwise exposed. No migration, write path, Telemt request, provisioning transition,
+secret rotation semantic, Node/Sponsor assignment/routing, audit wiring, Bot behavior,
+RBAC enforcement, backup/update/restart/log behavior, Dashboard metric, or lifecycle
+boundary changes are in scope.
+
+Acceptance requires this scope-doc CI to PASS before code change. The implementation
+candidate must then PASS Format, Vet, explicit SQLite migration tests, full Go tests,
+ShellCheck, installer syntax/unit tests, Docker prerequisites, Docker build, Compose
+config validation, and Telemt E2E/rerun before a new code checkpoint is promoted.
+
 ## Current next action
 
-Recovery point is the CP-067 promotion state. On resume, read the true branch HEAD and
-this plan from that HEAD, inspect every later commit/diff/CI, and forward-repair any
-partial work. If no newer work exists, proceed only with an independent roadmap item
-whose tooling and semantics are already established; otherwise preserve the explicit
-blockers above and do not invent missing contracts.
+Require PASS for the Stage 11V scope-doc CI. Then implement exactly the five-file
+read-only provisioning-phase inventory diff above, self-review the complete diff,
+require full candidate CI PASS, promote the checkpoint in this plan, require promotion
+CI PASS, and only then inspect the remaining roadmap for another independent milestone
+whose semantics are already established. Preserve every explicit blocker and never
+infer generic secret status from provisioning phase.
