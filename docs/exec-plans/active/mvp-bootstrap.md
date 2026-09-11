@@ -98,11 +98,30 @@ Telemt `3.5.7`, upstream commit `4ca7418442478cd92f9e861c21977a81b249efc8`.
 
 ### Stage 11K — Web Panel read-only Audit Log surface — COMPLETED AT CP-052
 
-CP-052 implements the bounded authenticated Web Panel Audit Log surface over the existing append-only persistence/read API. Its candidate CI is fully green. Promotion/docs CI must be verified before beginning the next implementation milestone.
+CP-052 implements the bounded authenticated Web Panel Audit Log surface over the existing append-only persistence/read API. Candidate CI `34576150059` and promotion/docs CI `34576583292` are both PASS.
 
-### Next independent milestone — read-only System status discovery
+### Stage 11L — Web Panel read-only established System health surface — ACTIVE
 
-After CP-052 promotion CI passes, inspect the roadmap System/Dashboard status requirements and the repository's already-established `/healthz`, `/readyz` and global proxy-health primitives. Select the smallest read-only System-status milestone that can be implemented without inventing Node credential semantics, Docker control semantics, backup/restore policy, update/restart policy, log exposure policy, version-source semantics or new Telemt topology. Update this plan with the exact bounded scope before code changes.
+Roadmap System/Dashboard asks for panel/database/proxy health among a much broader set of operational data. The repository already has three narrow health contracts: `/healthz` for Control Plane liveness, `/readyz` for database readiness, and authenticated `/api/system/proxy` for the single configured global Telemt checker. This milestone exposes only those already-established meanings in the Web Panel; it does not define any new runtime management semantics.
+
+Scope only:
+- add authenticated read-only `GET /system` Web Panel route through the existing `NewWithProxyHealth` wiring used by the production server;
+- show Control Plane as online when the authenticated page is rendered;
+- reuse the existing `/readyz` database readiness semantics (`db.PingContext` with the existing bounded timeout) to show only `ready` or `unavailable`;
+- reuse the existing global `telemt.Checker` and exact safe `telemt.Health.State` values for Proxy status, with `not_configured` when no checker exists;
+- preserve the existing `ReadOnly` health flag as display-only status when supplied;
+- add a minimal Dashboard navigation link to System;
+- no new API mutation, migration, background polling, automatic refresh, Node/per-node probing or credential handling;
+- no Bot status inference, version source, uptime/CPU/RAM/disk telemetry, Docker/runtime controls, logs, update/restart/repair/backup/diagnostics actions, Sponsor routing, reward semantics or new Telemt topology.
+
+Acceptance:
+- unauthenticated `/system` follows the existing Web Panel redirect-to-login behavior;
+- authenticated page is `Cache-Control: no-store` and renders explicit Panel, Database and global Proxy states only;
+- database readiness uses the same bounded check as `/readyz`;
+- nil checker renders `not_configured`; healthy/unavailable/unauthorized/invalid-response states remain literal safe status values from `telemt.Health`;
+- page load performs no authoritative-state mutation and exposes no credentials/endpoints/secrets;
+- Dashboard has a minimal System link;
+- targeted tests plus format/vet/full Go, installer/Docker prerequisites and Telemt E2E/rerun remain green.
 
 ### Stage 11H — Bot Content runtime delivery wiring — BLOCKED ON PRODUCT SEMANTICS
 
@@ -148,9 +167,10 @@ Roadmap requires configurable daily/weekly caps, cooldowns, blacklist and suspic
 - CP-051 candidate `89c147f0...` CI `34573865558` PASS across Format, Vet, full Go tests, installer syntax/unit tests, Docker prerequisites and Telemt E2E/rerun.
 - CP-051 promotion docs `be9a50d1...` CI `34574244815` PASS.
 - CP-052 candidate `44894ff9...` CI `34576150059` PASS across Format, Vet, full Go tests, installer syntax/unit tests, Docker prerequisites and Telemt E2E/rerun.
+- CP-052 promotion docs `ff5856c0...` CI `34576583292` PASS.
 - Local clone for CP-050/CP-052 targeted tests remained unavailable because the container could not resolve github.com; CP-052 staged Go files were `gofmt`-clean locally, and full GitHub CI supplied authoritative format/vet/test plus installer/Docker/Telemt verification.
 - One initial 11F `create_tree` connector call was tool-blocked before any branch move; retry succeeded with the same three staged blobs. No repository state was changed by the blocked call.
 
 ## Current next action
 
-Verify the CP-052 promotion docs-head CI. Then inspect the existing System/Dashboard status primitives and update this plan with one bounded independent read-only status milestone before implementation. Keep Bot runtime semantics, reward issuance, unresolved anti-abuse policy, Node runtime probing/per-node credentials, multi-Telemt routing, Docker control actions, backup/restore semantics, update/restart semantics, log exposure, secret handling and audit mutation behavior unchanged until their contracts are explicit.
+Implement only Stage 11L as scoped above. Reuse established `/readyz` database readiness and global `/api/system/proxy` health semantics; do not broaden into Bot status inference, per-Node health, version/telemetry, Docker/runtime actions, logs, backups, updates/restarts, new Telemt topology, reward/anti-abuse semantics, secret handling changes or audit mutation behavior.
