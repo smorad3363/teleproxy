@@ -3,7 +3,7 @@
 Status: ACTIVE
 Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
-Latest verified checkpoint: `6732ccbfaf522a44445075bb3d5986d56a0daecd`
+Latest verified checkpoint: `c8ba6e27de8153e6907e53e3eb813026728d0203`
 
 ## Recovery contract
 
@@ -70,6 +70,7 @@ Non-negotiable architecture: SQLite WAL/NORMAL is authoritative Control Plane st
 - CP-054 Authenticated read-only Administrator inventory API: `93d05fa059f45387d02c69f5b74a5bad170ccf9d`, CI `34579311752` PASS.
 - CP-055 Web Panel read-only Administrator inventory surface: `96af85e5105c0f93d7723a60305ca306c62930b8`, CI `34581088683` PASS.
 - CP-056 Dashboard read-only established health summary: `6732ccbfaf522a44445075bb3d5986d56a0daecd`, CI `34592339461` PASS.
+- CP-057 Web Panel established proxy lifecycle actions: `c8ba6e27de8153e6907e53e3eb813026728d0203`, CI `34596564418` PASS.
 
 ### Recent implemented checkpoints
 
@@ -79,7 +80,7 @@ Non-negotiable architecture: SQLite WAL/NORMAL is authoritative Control Plane st
 - CP-046 added `/settings` Start Gift Web Panel with exact int64 browser handling; candidate `198100a0...`, CI `34543281630` PASS.
 - CP-047 added migration `013_bot_content.sql` plus literal-text Bot Content persistence for seven fixed roadmap slots. Initial `f9b5ad04...` CI failed only because legacy migration-count tests expected 12; forward repair ended at `88465ade...`, CI `34543883064` PASS.
 - CP-048 added authenticated `GET /api/bot-content`, CSRF-protected per-slot `PUT` and `DELETE`, bounded strict JSON, typed Problems, deterministic configured-only list and empty `[]`. No Bot runtime wiring or network calls. Candidate `10dbde63...`, CI `34544396136` PASS.
-- CP-049 added `/bot-content` Web Panel showing all seven fixed slots, explicit not-configured state, escaped literal text and same-origin CSRF PUT/DELETE wiring over CP-048. No fallback copy or Bot runtime wiring. Candidate `8588193e...`, CI `34544809255` PASS.
+- CP-049 added authenticated `/bot-content` Web Panel showing all seven fixed slots, explicit not-configured state, escaped literal text and same-origin CSRF PUT/DELETE wiring over CP-048. No fallback copy or Bot runtime wiring. Candidate `8588193e...`, CI `34544809255` PASS.
 - CP-050 added additive migration `014_audit_log.sql` plus `internal/auditlog` append/get/list primitives for roadmap actor/action/target/before/after/timestamp/request-ID fields. The table is database-level append-only via update/delete rejection triggers; required identifiers and snapshots are bounded/UTF-8 validated; snapshots remain opaque caller-owned text, no existing mutation path is wired, and sensitive state is never implicitly copied. Migration compatibility tests now expect 14. Candidate `4a52a886...`, CI `34567969934` PASS.
 - CP-051 added authenticated read-only `GET /api/audit-log` with bounded `before_id`/`limit` pagination, newest-first SQLite reads, exact stored audit fields, explicit empty `[]`, `Cache-Control: no-store`, stable `AUDIT_LOG_INVALID` Problems, and no mutation endpoint or automatic mutation wiring. Candidate `89c147f0...`, CI `34573865558` PASS.
 - CP-052 added authenticated read-only `GET /audit-log` Web Panel using the existing page-session pattern, exact newest-first CP-051 pagination, escaped literal before/after snapshots with explicit absence, actor/action/target/request ID/RFC3339 timestamp display, explicit safe empty state and a minimal Dashboard link. No audit writes, migrations, mutation logging/redaction semantics, Telegram/Telemt changes, routing changes or reward semantics were added. Candidate `44894ff9...`, CI `34576150059` PASS.
@@ -87,6 +88,7 @@ Non-negotiable architecture: SQLite WAL/NORMAL is authoritative Control Plane st
 - CP-054 added authenticated read-only `GET /api/admins` backed only by existing authoritative `admins` columns. It returns deterministic ascending-ID inventory with `id`, `username`, literal `role`, `enabled`, `created_at` and `updated_at`, rejects query keys, uses `Cache-Control: no-store`, and never serializes password hashes or admin-session material. No RBAC interpretation/mutation, migration, audit mutation wiring or runtime/network behavior was added. Candidate `93d05fa0...`, CI `34579311752` PASS.
 - CP-055 added authenticated read-only `GET /admins` over the CP-054 administrator inventory read model. It renders the same six non-secret fields in ascending ID order, escapes literal username/role text through `html/template`, shows UTC RFC3339 timestamps and enabled state, has an explicit safe empty template state plus minimal Dashboard/Admin navigation, rejects query keys with the existing `ADMIN_INVENTORY_INVALID` contract, and performs no administrator/session mutation. No RBAC interpretation/mutation, secrets, migration, audit mutation wiring or runtime/network behavior was added. Candidate `96af85e5...`, CI `34581088683` PASS.
 - CP-056 added the established CP-053 Control Plane, database readiness and single global Telemt health meanings to authenticated Dashboard `GET /`. It preserves session/CSRF/logout and every existing navigation link, calls the configured global checker at most once per request, renders nil checker as `not_configured` / `not applicable`, and performs no authoritative-state mutation. No new endpoint, migration, polling, per-Node probing, Bot/Sponsor/traffic/reward metric inference, runtime action, secret handling or Telemt topology was added. Candidate `6732ccbf...`, CI `34592339461` PASS.
+- CP-057 added authenticated `/users` controls over the existing CP-009 proxy lifecycle endpoints for authoritative proxy usernames only: desired-state Enable/Disable and Rotate secret with the existing session-derived CSRF token. Successful desired-state changes reload authoritative inventory; successful rotation reveals the returned plaintext secret only in the current page with an explicit one-time warning; failures are bounded before display. No secret is pre-rendered, persisted, logged, audited or automatically copied, and no new endpoint, migration, proxy-account creation, traffic/time/credit/ban behavior, assignment/routing/reward semantic or Telemt topology is introduced. Candidate `c8ba6e27...`, CI `34596564418` PASS.
 
 ## Supplied source hashes
 
@@ -181,32 +183,17 @@ Roadmap requires configurable daily/weekly caps, cooldowns, blacklist and suspic
 - Stage 11O scope docs `8aaf5aa8...` CI `34582484532` PASS across Format, Vet, full Go tests, installer syntax/unit tests, Docker prerequisites and Telemt E2E/rerun.
 - CP-056 candidate `6732ccbf...` CI `34592339461` PASS across Format, Vet, full Go tests, installer syntax/unit tests, Docker prerequisites and Telemt E2E/rerun.
 - CP-056 promotion docs `5ff127f8...` CI `34592958185` PASS across Format, Vet, full Go tests, installer syntax/unit tests, Docker prerequisites and Telemt E2E/rerun.
+- Stage 11P scope docs `da83ae49...` CI `34595635661` PASS across Format, Vet, full Go tests, installer syntax/unit tests, Docker prerequisites and Telemt E2E/rerun. The scope commit had a one-word historical CP-049 description drift (`authenticated` omitted); CP-057 promotion forward-repairs that wording without changing CP-049 semantics.
+- CP-057 candidate `c8ba6e27...` CI `34596564418` PASS across Format, Vet, full Go tests, installer syntax/unit tests, Docker prerequisites and Telemt E2E/rerun. Local targeted execution remained unavailable because the container still could not resolve github.com; candidate files were gofmt-clean locally and GitHub CI supplied authoritative validation.
 - CP-053 promotion docs `336f6245...` CI `34577610899`: first installer attempt failed before application E2E because Docker Hub returned `502 Bad Gateway` for `golang:1.27.1-bookworm` and an image resolver returned `EOF`; targeted installer rerun job `103195352286` then PASSed installer syntax/unit, Docker prerequisites and Telemt E2E/rerun with no code change.
 - Local clone for CP-050/CP-052 targeted tests remained unavailable because the container could not resolve github.com; CP-052 staged Go files were `gofmt`-clean locally, and full GitHub CI supplied authoritative format/vet/test plus installer/Docker/Telemt verification.
 - One initial 11F `create_tree` connector call was tool-blocked before any branch move; retry succeeded with the same three staged blobs. No repository state was changed by the blocked call.
 - One initial Stage 11O large `create_blob` staging call was tool-blocked before object creation; retrying the exact gofmt-clean file as base64 produced the expected blob SHA. No branch state was changed by the blocked call.
 
-### Stage 11P — Web Panel established proxy lifecycle actions — ACTIVE
+### Stage 11P — Web Panel established proxy lifecycle actions — COMPLETED AT CP-057
 
-The roadmap Users surface explicitly calls for Enable / Disable and Generate new secret. Those mutation semantics already exist in the authenticated CP-009 proxy lifecycle API, including CSRF enforcement, authoritative desired-state persistence, fail-closed quota reconciliation, Telemt convergence/error codes, and reveal-once secret responses. CP-044 already exposes the authoritative proxy username, desired-enabled state and sync state on `/users`. This milestone adds only browser controls over those existing contracts.
-
-Scope only:
-- extend authenticated `/users` rows that already have a non-empty authoritative proxy username with Enable/Disable and Rotate secret controls; do not infer or create a proxy username for rows where none exists;
-- use the existing same-origin `POST /api/proxy/users/{username}/enable`, `/disable`, and `/rotate-secret` endpoints with the existing session-derived `X-CSRF-Token`; do not duplicate lifecycle logic or call Telemt directly from the page handler;
-- preserve the existing user-inventory pagination/query semantics and `Cache-Control: no-store`;
-- after enable/disable success, refresh the current inventory page so desired/sync state is re-read from authoritative SQLite;
-- after rotate-secret success, reveal the returned secret only in the current browser page with an explicit one-time warning; never persist, pre-render, log, audit, cache, or silently copy plaintext secret material;
-- surface existing typed API failures as bounded operator-visible status text without inventing retry, rollback, reconciliation or audit semantics;
-- no new endpoint, migration, proxy-account creation UI, traffic/time/credit mutation, ban/unban, secret-status inference, Node/Sponsor assignment, referral action, audit write, Telegram/Bot behavior, per-Node credentials, Sponsor routing, reward semantics, Docker/runtime action or Telemt topology change.
-
-Acceptance:
-- authenticated `/users` keeps its current inventory and navigation while showing only the already-established lifecycle controls for rows with proxy usernames;
-- the opposite desired-state action is available deterministically from the current `DesiredEnabled` value and rotate-secret is separately explicit;
-- mutation requests send the existing CSRF header and remain same-origin; unauthenticated behavior and API CSRF rejection remain unchanged;
-- successful enable/disable re-reads authoritative state; successful secret rotation reveals plaintext only from that response and the initial page contains no secret;
-- rows without a proxy username render a safe unavailable action state and issue no guessed lifecycle target;
-- targeted `internal/httpapi` tests plus format/vet/full Go, installer/Docker prerequisites and Telemt E2E/rerun remain green.
+CP-057 adds only the roadmap Users actions whose runtime semantics were already established by CP-009: Enable/Disable and Generate new secret (rendered as Rotate secret) for an existing authoritative proxy username. The authenticated `/users` page sends the existing session-derived `X-CSRF-Token` to the existing same-origin lifecycle endpoints, reloads authoritative SQLite-backed inventory after successful enable/disable, and reveals a newly rotated plaintext secret only from that successful response in the current page with an explicit one-time warning. Rows without a proxy username have a safe unavailable action state, and typed API failures are bounded before display. Candidate CI `34596564418` is fully PASS across format/vet/full Go plus installer/Docker/Telemt E2E/rerun. No new endpoint, migration, proxy-account creation, traffic/time/credit/ban mutation, secret-status inference, Node/Sponsor assignment, audit write, Telegram/Bot behavior, per-Node credentials, routing/reward semantics, Docker/runtime action or Telemt topology was introduced.
 
 ## Current next action
 
-Implement Stage 11P exactly as scoped, self-review the complete diff, run targeted/full validation, and checkpoint only after the complete CI gate passes. Preserve every listed blocker and do not broaden into proxy-account creation, traffic/time/credit mutation, ban semantics, Node/Sponsor assignment, audit mutation wiring, Dashboard metrics, Administrator RBAC enforcement, Bot runtime composition, per-Node credential/health semantics, referral reward issuance, anti-abuse policy, backup/restore, update/restart, logs, version-source semantics, new Telemt topology or secret persistence.
+After CP-057 promotion/docs CI passes, inspect the remaining roadmap against current repository contracts and select the next smallest independent milestone whose semantics are already established. Preserve every listed blocker and do not invent proxy-account creation, traffic/time/credit or ban semantics, Node/Sponsor assignment, audit mutation wiring, Dashboard metrics, Administrator RBAC enforcement, Bot runtime composition, per-Node credential/health semantics, referral reward issuance, anti-abuse policy, backup/restore, update/restart, logs, version-source semantics, new Telemt topology or secret persistence.
