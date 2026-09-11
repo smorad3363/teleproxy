@@ -1,12 +1,12 @@
 # MVP Bootstrap Execution Plan
 
-Status: ACTIVE
+Status: BLOCKED ON PRODUCT CONTRACTS
 Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
 Latest verified code checkpoint: `fa88c94b6ec654035a7fa086319542322ad5003e` (CP-070)
 Most recent verified code CI: `34650289404` PASS
-Current branch checkpoint: `fa88c94b6ec654035a7fa086319542322ad5003e` (CP-070 candidate)
-Current branch CI: `34650289404` PASS
+Current branch checkpoint: `59e34aa2d565ecf2cb7cae7a7f5fd286a4457f44` (CP-070 promotion docs)
+Current branch CI: `34650530913` PASS
 
 Historical execution detail is preserved without deletion:
 - through CP-059 at `docs/exec-plans/archive/mvp-bootstrap-through-cp059.md`;
@@ -60,6 +60,9 @@ forward only.
   tests, Docker prerequisites, Docker build, Compose config validation, and installer/
   Telemt E2E/rerun including the Control Docker healthy assertion after first install and
   rerun.
+- CP-070 promotion docs:
+  `59e34aa2d565ecf2cb7cae7a7f5fd286a4457f44`, CI `34650530913` PASS across every
+  established gate.
 
 ## Explicit blockers
 
@@ -144,12 +147,36 @@ cross-plane lifecycle coupling was added.
 Stage 12F scope docs `0ec8a0ca48fe1b5254e978f5fc11b4f6da16d185`
 passed CI `34649791579`. Candidate and CP-070 checkpoint
 `fa88c94b6ec654035a7fa086319542322ad5003e` passed CI `34650289404` across every
-established gate, including the new installed-Control Docker health assertion.
+established gate, including the new installed-Control Docker health assertion. Promotion
+docs `59e34aa2d565ecf2cb7cae7a7f5fd286a4457f44` passed CI `34650530913` across every
+established gate.
+
+## Post-CP-070 roadmap review — BLOCKED / NO SAFE INDEPENDENT MILESTONE
+
+The remaining MVP/reliability work is not safely implementable from current repository
+contracts without inventing behavior. In particular:
+- watchdog behavior requires a concrete repeated-failure/restart-loop threshold, durable
+  degraded-state semantics, and admin-notification contract before adding host actions;
+- Bot Content runtime delivery still lacks composition/fallback/missing-slot semantics;
+- per-Node health/test still lacks its credential/runtime endpoint contract;
+- referral reward issuance still lacks the reward recipient contract;
+- remaining referral anti-abuse still lacks cap/cooldown/blacklist/suspicious defaults;
+- Node/Sponsor routing, RBAC enforcement, backup/restore, update/rollback/version source,
+  Dashboard metrics, secret persistence, and new Telemt topology remain explicitly
+  unresolved;
+- remaining CI recommendations lack repository-selected tooling/acceptance contracts as
+  recorded above.
+
+The roadmap's Docker-healthcheck requirement was independently satisfiable and is now
+closed at CP-070. No further product/runtime code should be written until one of the
+contracts above becomes repository-defined or explicitly established.
 
 ## Current next action
 
-Promote CP-070 documentation only and require full CI PASS on the promotion commit.
-Then re-check the roadmap and repository for another independent milestone whose
-semantics are already established. If none remains, record a recovery-safe blocked state
-rather than invent watchdog thresholds/notifications or other missing product/runtime
-contracts. Preserve every explicit blocker and lifecycle boundary.
+This branch is recovery-safe and blocked on missing product/tooling contracts rather than
+on an unfinished implementation. On resume, first read the true branch HEAD and this
+plan from that exact HEAD, inspect every later commit/diff/CI, and forward-repair any
+new partial work. If there is no newer work, do not invent semantics: continue only when
+a previously blocked contract or a new independent roadmap milestone is concretely
+specified. Preserve every architecture invariant, explicit blocker, and lifecycle
+boundary above.
