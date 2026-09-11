@@ -65,6 +65,7 @@ assert_doctor() {
   grep -F 'Compose: valid' <<<"$output" >/dev/null
   grep -F 'Control container: running' <<<"$output" >/dev/null
   grep -F 'Telemt container: running' <<<"$output" >/dev/null
+  grep -F 'Control Docker health: healthy' <<<"$output" >/dev/null
   grep -F 'Control Plane: ready' <<<"$output" >/dev/null
   grep -F 'Proxy Plane: healthy' <<<"$output" >/dev/null
 }

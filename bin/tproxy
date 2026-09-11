@@ -35,6 +35,18 @@ container_running() {
   return 1
 }
 
+control_health() {
+  local id status
+  id=$(compose ps -q control 2>/dev/null || true)
+  if [[ -z "$id" ]]; then
+    echo "Control Docker health: missing" >&2
+    return 1
+  fi
+  status=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}missing{{end}}' "$id" 2>/dev/null || true)
+  printf 'Control Docker health: %s\n' "${status:-unknown}"
+  [[ "$status" == "healthy" ]]
+}
+
 proxy_health() {
   local id status
   id=$(compose ps -q telemt 2>/dev/null || true)
@@ -72,6 +84,7 @@ case "${1:-status}" in
     fi
     container_running control "Control container" || failed=1
     container_running telemt "Telemt container" || failed=1
+    control_health || failed=1
     if curl -fsS --max-time 3 "http://127.0.0.1:${panel_port}/readyz" >/dev/null; then
       echo "Control Plane: ready"
     else
