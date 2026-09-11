@@ -17,6 +17,7 @@ type botContentPayload struct {
 }
 
 func (s *Server) registerBotContentRoutes() {
+	s.mux.HandleFunc("GET /bot-content", s.handleBotContentPage)
 	s.mux.HandleFunc("GET /api/bot-content", s.handleBotContentList)
 	s.mux.HandleFunc("PUT /api/bot-content/{slot}", s.handleBotContentPut)
 	s.mux.HandleFunc("DELETE /api/bot-content/{slot}", s.handleBotContentDelete)
