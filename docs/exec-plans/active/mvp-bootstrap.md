@@ -5,8 +5,8 @@ Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
 Latest verified code checkpoint: `76681c8c7a5031cb44d3c12e3664d11f8421cc29` (CP-063)
 Most recent verified code CI: `34621814385` PASS
-Current branch checkpoint: `76681c8c7a5031cb44d3c12e3664d11f8421cc29` (CP-063 candidate)
-Current branch CI: `34621814385` PASS
+Current branch checkpoint: `2ef6317a251990f056fff7d518adc680887d67d3` (CP-063 promotion docs)
+Current branch CI: `34622311160` PASS
 
 Historical execution detail through CP-059 is preserved byte-for-byte at
 `docs/exec-plans/archive/mvp-bootstrap-through-cp059.md`, using the prior active-plan
@@ -65,6 +65,8 @@ was published.
   `76681c8c7a5031cb44d3c12e3664d11f8421cc29`, CI `34621814385` PASS across Format,
   Vet, full Go tests, installer syntax/unit tests, Docker prerequisites, and Telemt
   E2E/rerun including `tproxy doctor` after initial install and rerun.
+- CP-063 promotion docs:
+  `2ef6317a251990f056fff7d518adc680887d67d3`, CI `34622311160` PASS.
 
 ## Explicit blockers
 
@@ -162,9 +164,49 @@ connectivity, DNS, disk, clock, repair semantics, or unrelated CLI command behav
 added or changed. Candidate `76681c8c7a5031cb44d3c12e3664d11f8421cc29`,
 CI `34621814385` PASS all gates.
 
+## Stage 12B — CI ShellCheck gate — ACTIVE
+
+The roadmap explicitly requires ShellCheck in recommended CI. The current workflow
+performs Bash syntax checks and shell unit/E2E tests but has no ShellCheck gate. This
+stage adds one bounded static-analysis gate for the repository's existing shell entry
+points and tests.
+
+The intended first implementation changes only `.github/workflows/ci.yml`, adding a
+ShellCheck step in the existing `installer` job after checkout and before syntax/unit
+tests. It checks exactly the current shell files already covered by the installer CI
+path: `install.sh`, `scripts/install_lib.sh`, `scripts/install-host.sh`, `bin/tproxy`,
+`tests/installer_lib_test.sh`, and `tests/installer_e2e.sh`.
+
+Use the ShellCheck binary supplied by the GitHub-hosted Ubuntu runner; do not add a
+third-party action, remote install script, new package repository, or downloaded
+binary. The existing Bash syntax/unit, Docker prerequisite, and installer/Telemt E2E
+gates remain unchanged and still run after ShellCheck.
+
+If the new gate exposes pre-existing ShellCheck findings, repair them forward only
+when the fix is demonstrably semantics-preserving and limited to the listed shell
+files. Do not suppress broad warning classes, add blanket exclusions, or refactor
+unrelated installer/CLI behavior merely to silence the linter. Any such repair must be
+reviewed as part of the candidate diff and pass the full existing CI.
+
+No runtime feature, endpoint, migration, Docker topology, installer behavior, CLI
+command semantics, secret handling, backup/update/rollback/watchdog behavior, Bot
+behavior, Node health, referral semantics, or Control/Proxy lifecycle coupling is in
+scope.
+
+### Acceptance
+
+- CI has an explicit ShellCheck step in the existing installer job.
+- The gate covers exactly the six existing shell files listed above.
+- No third-party action or network-time shell linter installer is introduced.
+- Existing Bash syntax/unit, Docker prerequisite, and Telemt E2E/rerun gates remain
+  intact.
+- Any linter-driven source repair is minimal, forward-only, and semantics-preserving.
+- Full CI passes.
+
 ## Current next action
 
-Promote CP-063 documentation only and require full CI PASS. Then inspect the roadmap
-and current repository contracts for the next semantics-established bounded milestone.
-Preserve every explicit blocker, existing lifecycle separation, and Credit Buckets as
-authoritative quota/reward state; do not invent missing product/runtime semantics.
+Publish this Stage 12B scope as a plan-only commit and require full CI PASS. Then add
+only the bounded ShellCheck CI gate above; if it reports existing findings, repair only
+minimal semantics-preserving shell issues and require full CI again before checkpoint
+promotion. Preserve every explicit blocker and do not broaden the milestone into
+runtime or product behavior.
