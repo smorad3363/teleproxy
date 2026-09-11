@@ -3,10 +3,10 @@
 Status: ACTIVE
 Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
-Latest verified code checkpoint: `fa82c2d1c2646eb727b09f4415c1e3537af448bc` (CP-066)
-Most recent verified code CI: `34644370094` PASS
-Current branch checkpoint: `e4c8c46b2f231928be19b8cf5d0358c0bcc6720b` (CP-066 promotion docs)
-Current branch CI: `34644717476` PASS
+Latest verified code checkpoint: `96727695b3bc5fbe28d0d9739e17d93c1e14632c` (CP-067)
+Most recent verified code CI: `34645419394` PASS
+Current branch checkpoint: `96727695b3bc5fbe28d0d9739e17d93c1e14632c` (CP-067 candidate)
+Current branch CI: `34645419394` PASS
 
 Historical execution detail through CP-059 is preserved byte-for-byte at
 `docs/exec-plans/archive/mvp-bootstrap-through-cp059.md`, using the prior active-plan
@@ -100,6 +100,13 @@ was published.
   explicit Docker build, Compose config validation, and Telemt E2E/rerun.
 - CP-066 promotion docs:
   `e4c8c46b2f231928be19b8cf5d0358c0bcc6720b`, CI `34644717476` PASS.
+- Stage 12E scope docs:
+  `21a041a3ae8374c69ac607c965b2757f894434f2`, CI `34645182157` PASS.
+- CP-067 CI SQLite migration test gate:
+  `96727695b3bc5fbe28d0d9739e17d93c1e14632c`, CI `34645419394` PASS across Format,
+  Vet, explicit SQLite migration tests, full Go tests, ShellCheck, installer syntax/unit
+  tests, Docker prerequisites, explicit Docker build, Compose config validation, and
+  Telemt E2E/rerun.
 
 ## Explicit blockers
 
@@ -277,39 +284,33 @@ passed CI `34644370094` across Format, Vet, full Go tests, ShellCheck, installer
 syntax/unit tests, Docker prerequisites, explicit Docker build, Compose config
 validation, and Telemt E2E/rerun.
 
-## Stage 12E — CI SQLite migration test gate — SCOPED
+## Stage 12E — CI SQLite migration test gate — COMPLETED AT CP-067
 
-The roadmap requires a SQLite migration CI check. The repository already has a bounded,
-semantics-established migration contract in `internal/database`: fresh `Open` applies
-all 14 embedded migrations under the established SQLite invariants and verifies rerun
-idempotency; existing upgrade tests preserve v5 proxy/credit rows and v9 referral
-attribution while migrating to the current schema.
-
-Intended code diff is exactly:
-- `.github/workflows/ci.yml`
-
-The implementation will add one explicit `SQLite migration tests` step to the existing
-`go` job after `Vet` and before the full test suite. It will run only the established
+CP-067 adds one explicit `SQLite migration tests` step to the existing `go` CI job
+after Vet and before the full Go test suite. It runs only the already-established
 migration-focused tests with:
 `go test ./internal/database -run '^(TestOpenAppliesSQLiteInvariantsAndMigrations|TestMigrate.*)$'`.
-The existing `go test ./...` remains unchanged afterward; the explicit gate exists only
-for fail-fast attribution of migration regressions.
+This independently attributes regressions in fresh migration application/rerun and
+existing upgrade-preservation fixtures while leaving the full `go test ./...` gate in
+place immediately afterward.
+
+The final scoped code diff contains exactly:
+- `.github/workflows/ci.yml`
 
 No migration SQL, schema, migration count, SQLite pragma, database runtime behavior,
 test fixture semantics, persisted data contract, endpoint, installer, Docker, secret,
-Bot/referral/Sponsor/Node/Telemt product behavior, or lifecycle boundary will change.
+Bot/referral/Sponsor/Node/Telemt product behavior, or lifecycle boundary changed.
 
-Acceptance requires the scope-doc CI to pass before code change, then the candidate CI
-to pass Format, Vet, the explicit SQLite migration tests, full Go tests, ShellCheck,
-installer syntax/unit tests, Docker prerequisites, explicit Docker build, Compose config
-validation, and Telemt E2E/rerun.
+Stage 12E scope docs `21a041a3ae8374c69ac607c965b2757f894434f2`
+passed CI `34645182157`. Candidate `96727695b3bc5fbe28d0d9739e17d93c1e14632c`
+passed CI `34645419394` across Format, Vet, explicit SQLite migration tests, full Go
+tests, ShellCheck, installer syntax/unit tests, Docker prerequisites, explicit Docker
+build, Compose config validation, and Telemt E2E/rerun.
 
 ## Current next action
 
-Require PASS for the Stage 12E scope-doc CI. Then implement exactly the scoped
-`.github/workflows/ci.yml` SQLite migration gate, self-review the one-file diff, require
-full candidate CI PASS, promote the checkpoint in this plan, require promotion CI PASS,
-and only then inspect remaining roadmap items for another independent milestone whose
+Promote CP-067 documentation only and require full CI PASS. Then inspect the remaining
+roadmap and current repository contracts for the next independent milestone whose
 semantics and tooling are already established. Preserve every explicit blocker,
 lifecycle separation, and Credit Buckets as authoritative quota/reward state; do not
 invent missing product/runtime semantics.
