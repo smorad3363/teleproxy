@@ -3,7 +3,7 @@
 Status: ACTIVE
 Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
-Latest verified checkpoint: `10dbde635dc8909e9bcbbe633ff659fc9934480e`
+Latest verified checkpoint: `8588193e98d027c16f45b3f77149acf18c65cb9f`
 
 ## Recovery contract
 
@@ -60,6 +60,7 @@ Non-negotiable architecture: SQLite WAL/NORMAL is authoritative Control Plane st
 - CP-046 Web Panel Start Gift settings surface: `198100a015195c5ac64c13ddb4eea90e1c653eb6`, CI `34543281630` PASS.
 - CP-047 Bot Content persistence primitives: `88465adede77f118c9507b016bd38274bd2408f0`, CI `34543883064` PASS.
 - CP-048 Authenticated Bot Content Admin API: `10dbde635dc8909e9bcbbe633ff659fc9934480e`, CI `34544396136` PASS.
+- CP-049 Web Panel Bot Content management surface: `8588193e98d027c16f45b3f77149acf18c65cb9f`, CI `34544809255` PASS.
 
 ### Recent implemented checkpoints
 
@@ -69,6 +70,7 @@ Non-negotiable architecture: SQLite WAL/NORMAL is authoritative Control Plane st
 - CP-046 added `/settings` Start Gift Web Panel with exact int64 browser handling; candidate `198100a0...`, CI `34543281630` PASS.
 - CP-047 added migration `013_bot_content.sql` plus literal-text Bot Content persistence for seven fixed roadmap slots. Initial `f9b5ad04...` CI failed only because legacy migration-count tests expected 12; forward repair ended at `88465ade...`, CI `34543883064` PASS.
 - CP-048 added authenticated `GET /api/bot-content`, CSRF-protected per-slot `PUT` and `DELETE`, bounded strict JSON, typed Problems, deterministic configured-only list and empty `[]`. No Bot runtime wiring or network calls. Candidate `10dbde63...`, CI `34544396136` PASS.
+- CP-049 added authenticated `/bot-content` Web Panel showing all seven fixed slots, explicit not-configured state, escaped literal text and same-origin CSRF PUT/DELETE wiring over CP-048. No fallback copy or Bot runtime wiring. Candidate `8588193e...`, CI `34544809255` PASS.
 
 ## Supplied source hashes
 
@@ -86,26 +88,31 @@ Telemt `3.5.7`, upstream commit `4ca7418442478cd92f9e861c21977a81b249efc8`.
 
 ## Active stage
 
-### Stage 11G — Web Panel Bot Content management surface — ACTIVE
+### Stage 11I — Audit Log persistence primitives — ACTIVE
 
-Roadmap basis: Web Panel Bot Content explicitly requires management of welcome, forced join, referral, proxy, expired, no-credit and support content. CP-047/048 now provide fixed-slot persistence and authenticated mutation APIs. This milestone adds only a minimal server-rendered management page; Bot runtime delivery remains unchanged.
+Roadmap basis: Web Panel Audit Log explicitly requires actor, action, target, before, after, timestamp and request ID, and explicitly forbids raw secrets in audit records. This milestone adds only append/read persistence primitives; no existing mutation path is wired to audit logging yet.
 
 Scope only:
-- add authenticated server-rendered `/bot-content` showing all seven fixed roadmap slots, including an explicit not-configured state for absent overrides;
-- render configured literal text with `html/template` escaping and `Cache-Control: no-store`;
-- save configured text only through same-origin CP-048 `PUT /api/bot-content/{slot}` with session-derived CSRF;
-- clear an override only through CP-048 `DELETE /api/bot-content/{slot}` with session-derived CSRF;
-- add the smallest Dashboard/navigation link required to reach the page;
-- no default/fallback copy, templates/placeholders, parse-mode/HTML/Markdown semantics, button labels, emoji settings, Bot runtime wiring, Telegram/Telemt call, migration or unrelated settings UI.
+- add one additive migration for an append-only audit log containing actor, action, target, optional before/after snapshots, timestamp and request ID;
+- add a narrow `internal/auditlog` domain/store with append and deterministic bounded read primitives;
+- validate required textual identity/action/target/request-ID fields and bounded UTF-8 snapshot payloads;
+- represent before/after as opaque text owned by the caller; this primitive does not serialize domain objects or infer secret redaction policy;
+- never log or persist a raw secret from any existing path; no existing caller is wired in this milestone;
+- update migration-count compatibility tests for the additive migration;
+- no Admin API, Web Panel page, Telegram/Telemt call, Node/Sponsor routing, reward issuance, secret handling change or installer/compose change.
 
 Acceptance:
-- unauthenticated page redirects under existing Web Panel behavior; authenticated page is no-store;
-- all seven fixed slots appear even when no overrides exist; absent slots are visibly not configured and no copy is fabricated;
-- configured Unicode text round-trips and is safely escaped in HTML;
-- browser wiring targets only CP-048 same-origin PUT/DELETE endpoints and includes CSRF;
-- page render does not mutate Bot Content or unrelated authoritative tables;
-- existing Bot `/start`, Forced Join, referral, proxy, User, Node/Sponsor and settings behavior remains unchanged;
+- migration is additive, idempotent under existing migration runner and preserves existing data;
+- append rejects missing/invalid required fields and oversized/invalid UTF-8 snapshots without mutation;
+- list/read ordering is deterministic and bounded, with explicit empty `[]` behavior;
+- stored timestamp is UTC second precision and request ID round-trips exactly;
+- no update/delete primitive is exposed by `internal/auditlog`;
+- tests prove existing sensitive tables/fields are not copied into the audit log implicitly;
 - format/vet/test and Docker/Telemt E2E remain green.
+
+### Stage 11H — Bot Content runtime delivery wiring — BLOCKED ON PRODUCT SEMANTICS
+
+Roadmap Web Panel Bot Content names seven content slots — welcome, forced join, referral, proxy, expired, no-credit and support — but does not define runtime composition/fallback semantics. Current Telegram `webhook.go` emits one combined account/proxy/referral start response, has a separate Forced Join formatter/keyboard, and has no established expired/no-credit/support delivery events. The roadmap also lists button labels, Premium/Custom Emoji and fallback emoji separately without defining their relationship to literal text overrides. Do not map or concatenate stored slots into live Bot messages, invent absent-slot fallback behavior, or create new delivery events until that contract is explicit.
 
 ### Stage 9D — Proxy Node test/health/status — BLOCKED ON RUNTIME CREDENTIAL CONTRACT
 
@@ -128,6 +135,7 @@ Roadmap requires configurable daily/weekly caps, cooldowns, blacklist and suspic
 - User surfaces do not infer schema-absent Telegram username, Node/Sponsor assignment or general last activity.
 - Start Gift configuration affects only future exactly-once grants.
 - Bot Content remains literal text overrides only. Absent slots stay absent; runtime defaults, templates/formatting, buttons/emoji and Bot delivery wiring are separate contracts.
+- Audit Log primitives remain caller-driven and append-only; snapshot serialization/redaction is not guessed by the persistence layer.
 
 ## Validation/failure log
 
@@ -136,8 +144,10 @@ Roadmap requires configurable daily/weekly caps, cooldowns, blacklist and suspic
 - CP-047 initial `f9b5ad04...` CI `34543744898` FAIL only in stale migration-count assertions; forward repair `74071dfa...` → `88465ade...`; final CI `34543883064` PASS.
 - CP-047 promotion docs `b4468969...` CI `34544137155` PASS.
 - CP-048 candidate `10dbde63...` CI `34544396136` PASS across full Go and installer/Docker/Telemt E2E validation.
+- CP-048 promotion docs `b6e7dc81...` CI `34544624549` PASS.
+- CP-049 candidate `8588193e...` CI `34544809255` PASS across full Go and installer/Docker/Telemt E2E validation.
 - One initial 11F `create_tree` connector call was tool-blocked before any branch move; retry succeeded with the same three staged blobs. No repository state was changed by the blocked call.
 
 ## Current next action
 
-Verify the CP-048 promotion docs-head CI. Then implement only Stage 11G Web Panel Bot Content management over CP-048. Keep Bot runtime delivery/wiring, fallback/default copy, templates/placeholders/formatting, button labels/emoji, secrets, reward issuance, unresolved anti-abuse policy, Node runtime probing, multi-Telemt routing and installer/compose behavior unchanged.
+Verify the CP-049 promotion docs-head CI. Then implement only Stage 11I Audit Log persistence primitives. Keep Bot runtime delivery/wiring, fallback/default copy, templates/placeholders/formatting, button labels/emoji, secrets, reward issuance, unresolved anti-abuse policy, Node runtime probing, multi-Telemt routing and installer/compose behavior unchanged.
