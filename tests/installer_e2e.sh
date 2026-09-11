@@ -42,6 +42,23 @@ compose() {
     -f "$INSTALL_DIR/source/compose.yaml" "$@"
 }
 
+assert_control_healthy() {
+  local control_id health_status container_state
+  control_id=$(compose ps -q control)
+  [[ -n "$control_id" ]]
+  health_status=
+  for _ in {1..60}; do
+    health_status=$(sudo docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}missing{{end}}' "$control_id")
+    if [[ "$health_status" == healthy ]]; then
+      return 0
+    fi
+    sleep 1
+  done
+  container_state=$(sudo docker inspect -f '{{.State.Status}}' "$control_id")
+  echo "Control Docker healthcheck did not become healthy: container=${container_state} health=${health_status}" >&2
+  return 1
+}
+
 assert_doctor() {
   local output
   output=$(TPROXY_INSTALL_DIR="$INSTALL_DIR" "$TPROXY_BIN" doctor)
@@ -66,6 +83,7 @@ grep -Eq '^Initial Password: [0-9a-f]{48}$' "$OUT1"
 grep -F 'Proxy Plane:      healthy (Telemt 3.5.7)' "$OUT1" >/dev/null
 [[ ! -e "$INSTALL_DIR/secrets/admin-bootstrap-password" ]]
 curl -fsS --max-time 3 "http://127.0.0.1:${port1}/readyz" >/dev/null
+assert_control_healthy
 TPROXY_INSTALL_DIR="$INSTALL_DIR" "$TPROXY_BIN" panel | grep -F "http://127.0.0.1:${port1}" >/dev/null
 TPROXY_INSTALL_DIR="$INSTALL_DIR" "$TPROXY_BIN" proxy status | grep -F 'Proxy Plane: healthy' >/dev/null
 assert_doctor
@@ -103,6 +121,7 @@ if grep -Eq '^Initial Password: [0-9a-f]{48}$' "$OUT2"; then
   exit 1
 fi
 curl -fsS --max-time 3 "http://127.0.0.1:${port2}/readyz" >/dev/null
+assert_control_healthy
 TPROXY_INSTALL_DIR="$INSTALL_DIR" "$TPROXY_BIN" proxy status | grep -F 'Proxy Plane: healthy' >/dev/null
 assert_doctor
 

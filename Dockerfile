@@ -14,4 +14,5 @@ RUN groupadd --gid 10001 teleproxy \
 COPY --from=build /out/teleproxy-control /usr/local/bin/teleproxy-control
 USER 10001:10001
 EXPOSE 8080
+HEALTHCHECK --interval=10s --timeout=5s --start-period=5s --retries=5 CMD ["/usr/local/bin/teleproxy-control", "healthcheck", "http://127.0.0.1:8080/readyz"]
 ENTRYPOINT ["/usr/local/bin/teleproxy-control"]

@@ -24,6 +24,14 @@ import (
 const telegramWebhookPath = "/telegram/webhook"
 
 func main() {
+	if handled, err := runControlCommand(os.Args[1:]); handled {
+		if err != nil {
+			_, _ = fmt.Fprintln(os.Stderr, err.Error())
+			os.Exit(1)
+		}
+		return
+	}
+
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	if err := run(logger); err != nil {
 		logger.Error("control plane stopped", "error", err)
