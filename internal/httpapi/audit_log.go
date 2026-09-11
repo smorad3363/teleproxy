@@ -13,6 +13,7 @@ const (
 )
 
 func (s *Server) registerAuditLogRoutes() {
+	s.mux.HandleFunc("GET /audit-log", s.handleAuditLogPage)
 	s.mux.HandleFunc("GET /api/audit-log", s.handleAuditLogList)
 }
 
