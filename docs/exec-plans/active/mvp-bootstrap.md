@@ -50,6 +50,8 @@ was published.
   `6660951628ac191b46199930899b29a0fddb5ce6`, CI `34612807650` PASS.
 - CP-060 Settings established referral reward configuration surface:
   `f038c8b266c66b9378d26547c7c4ab4a68e45de6`, CI `34613204935` PASS.
+- CP-060 promotion docs:
+  `e32525cfdccf64d0bff9b87e489d3fdace2fa7ed`, CI `34613627486` PASS.
 
 CP-059 extends only existing authenticated `GET /api/users` and `GET /users` with
 optional exact `telegram_id` and `proxy_username` filters over authoritative SQLite.
@@ -83,8 +85,8 @@ score inputs/threshold are unresolved. Do not invent them.
 
 Also do not invent Node/Sponsor assignment/routing, audit mutation/redaction wiring,
 Administrator RBAC enforcement, backup/restore, update/restart/log/version-source
-semantics, Dashboard metrics, referral-tree/filter semantics, new Telemt topology,
-or secret persistence.
+semantics, Dashboard metrics, referral-tree or user-scoped referral-history semantics,
+new Telemt topology, or secret persistence.
 
 ## Stage 11S — Settings established referral reward configuration surface — COMPLETED AT CP-060
 
@@ -112,9 +114,51 @@ Candidate `f038c8b266c66b9378d26547c7c4ab4a68e45de6`, CI `34613204935` PASS acro
 Format, Vet, full Go tests, installer syntax/unit tests, Docker prerequisites, and
 Telemt E2E/rerun.
 
+## Stage 11T — Referral history authoritative exact status filter — ACTIVE
+
+Scope is limited to extending the existing authenticated
+`GET /api/referral/history` and `GET /referrals` read contracts with one optional,
+single-value exact `status` filter over authoritative
+`referral_attributions.status`.
+
+Accepted values are exactly the already-established referral status constants:
+`pending`, `rewarded`, and `rejected`. No trimming, case folding, aliases, fuzzy
+matching, inferred status, or new status is introduced. An absent filter preserves
+current behavior.
+
+`referral.HistoryQuery` may carry the exact status. The read model validates a
+non-empty status against those three existing constants, applies `ra.status = ?`, and
+combines it with an optional `before_id` cursor using logical AND. Newest-first ID
+ordering, bounded `limit + 1` pagination, stored rejection/eligibility/finalization
+fields, and read-only behavior remain unchanged.
+
+The HTTP parser may additionally accept one `status` query value. Duplicate status,
+unknown status, or any otherwise malformed/unknown query continues to use the existing
+`REFERRAL_HISTORY_INVALID` Problem contract. The `/referrals` page adds a minimal GET
+status selector for All, Pending, Rewarded, and Rejected; Older referrals pagination
+retains the active status plus explicit limit. The existing referral reward settings
+form remains unchanged.
+
+No endpoint, migration, write path, rejection-reason filter, suspicious-referral
+classification, anti-abuse policy, reward recipient/issuance, eligibility/finalization
+mutation, referral tree, inviter/invitee user-scoped filtering, assignment/routing,
+audit wiring, Bot behavior, per-Node credentials/health, Telemt topology, or secret
+persistence is introduced.
+
+### Acceptance
+
+- Domain history filtering returns only the exact requested authoritative status.
+- `status` composes correctly with `before_id` and preserves newest-first pagination.
+- API accepts only one exact established status and rejects duplicate/unknown values
+  with `REFERRAL_HISTORY_INVALID`.
+- `/referrals` renders only the established status choices and preserves an active
+  filter in Older referrals links.
+- Unfiltered API/page behavior remains unchanged and GET remains no-store/read-only.
+- Focused domain/API/page regression tests and full CI PASS.
+
 ## Current next action
 
-Promote CP-060 documentation only and require full CI PASS. Then inspect the roadmap
-and current repository contracts for the next semantics-established bounded milestone.
-Preserve Credit Buckets as source of truth and every blocker above; do not invent
-missing product/runtime semantics.
+Publish this Stage 11T scope as a plan-only commit and require full CI PASS. Then
+implement only the authoritative exact referral status filter described above,
+self-review the bounded diff, and require full CI again before checkpoint promotion.
+Preserve Credit Buckets as source of truth and every blocker above.
