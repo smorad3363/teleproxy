@@ -5,8 +5,8 @@ Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
 Latest verified code checkpoint: `96727695b3bc5fbe28d0d9739e17d93c1e14632c` (CP-067)
 Most recent verified code CI: `34645419394` PASS
-Current branch checkpoint: `96727695b3bc5fbe28d0d9739e17d93c1e14632c` (CP-067 candidate)
-Current branch CI: `34645419394` PASS
+Current branch checkpoint: `ed3bb7b33a5758b0bc5d0ec0bec0f9daf60eea98` (CP-067 promotion docs)
+Current branch CI: `34645693007` PASS
 
 Historical execution detail through CP-059 is preserved byte-for-byte at
 `docs/exec-plans/archive/mvp-bootstrap-through-cp059.md`, using the prior active-plan
@@ -107,6 +107,8 @@ was published.
   Vet, explicit SQLite migration tests, full Go tests, ShellCheck, installer syntax/unit
   tests, Docker prerequisites, explicit Docker build, Compose config validation, and
   Telemt E2E/rerun.
+- CP-067 promotion docs:
+  `ed3bb7b33a5758b0bc5d0ec0bec0f9daf60eea98`, CI `34645693007` PASS.
 
 ## Explicit blockers
 
@@ -307,10 +309,37 @@ passed CI `34645419394` across Format, Vet, explicit SQLite migration tests, ful
 tests, ShellCheck, installer syntax/unit tests, Docker prerequisites, explicit Docker
 build, Compose config validation, and Telemt E2E/rerun.
 
+## Remaining CI roadmap after CP-067 — REVIEWED / NOT SCOPED
+
+Current CI now explicitly covers gofmt, go vet, full Go tests, SQLite migration tests,
+ShellCheck, Docker build, Compose config validation, and the existing installer/Telemt
+E2E install/rerun path.
+
+The remaining roadmap CI items were compared against the current repository primitives:
+
+- Targeted integration tests: the repository has no dedicated test tag, named suite, or
+  separate harness defining a distinct subset beyond the existing package tests and
+  installer/Telemt E2E. Do not invent selection semantics merely to create a second gate.
+- Secret scan: no repository-defined scanner, ruleset, suppression policy, or pinned
+  scanner contract exists. Do not invent tool/pattern/version policy.
+- Dependency vulnerability check: no repository-defined scanner, configuration, or
+  version policy exists; the roadmap's "reasonable" threshold does not itself define a
+  concrete enforcement contract. Do not invent one.
+- Target-distro install smoke: the roadmap names Ubuntu LTS and Debian Stable, but the
+  current automation has no pinned distro matrix or Debian installation harness. Do not
+  claim support or invent a container/systemd/Docker substitute for actual target-OS
+  testing.
+- Upgrade/rollback smoke: update/rollback/version-source behavior remains explicitly
+  unresolved in this plan, so those checks cannot be defined without inventing product
+  semantics.
+
+No additional implementation milestone is scoped from these items until its tooling and
+acceptance contract are repository-defined or otherwise explicitly established.
+
 ## Current next action
 
-Promote CP-067 documentation only and require full CI PASS. Then inspect the remaining
-roadmap and current repository contracts for the next independent milestone whose
-semantics and tooling are already established. Preserve every explicit blocker,
-lifecycle separation, and Credit Buckets as authoritative quota/reward state; do not
-invent missing product/runtime semantics.
+Recovery point is the CP-067 promotion state. On resume, read the true branch HEAD and
+this plan from that HEAD, inspect every later commit/diff/CI, and forward-repair any
+partial work. If no newer work exists, proceed only with an independent roadmap item
+whose tooling and semantics are already established; otherwise preserve the explicit
+blockers above and do not invent missing contracts.
