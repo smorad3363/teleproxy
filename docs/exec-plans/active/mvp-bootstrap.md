@@ -3,10 +3,10 @@
 Status: ACTIVE
 Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
-Latest verified code checkpoint: `96727695b3bc5fbe28d0d9739e17d93c1e14632c` (CP-067)
-Most recent verified code CI: `34645419394` PASS
-Current branch checkpoint: `ed3bb7b33a5758b0bc5d0ec0bec0f9daf60eea98` (CP-067 promotion docs)
-Current branch CI: `34645693007` PASS
+Latest verified code checkpoint: `f2378e70dc4028fa40f9d1bd2a5c540a1f67bac0` (CP-068)
+Most recent verified code CI: `34647334507` PASS
+Current branch checkpoint: `f2378e70dc4028fa40f9d1bd2a5c540a1f67bac0` (CP-068 candidate)
+Current branch CI: `34647334507` PASS
 
 Historical execution detail through CP-059 is preserved byte-for-byte at
 `docs/exec-plans/archive/mvp-bootstrap-through-cp059.md`, using the prior active-plan
@@ -113,6 +113,13 @@ was published.
   `3390e4189bb8ca6d4c7791a7b48b57f2245db84f`, CI `34646117924` PASS across both
   jobs and all established Go, SQLite migration, ShellCheck, installer, Docker build,
   Compose validation, and Telemt E2E/rerun gates.
+- Stage 11V scope docs:
+  `a37f479658667e618adb351cc2342149b17a12f3`, CI `34646836783` PASS.
+- CP-068 User inventory authoritative provisioning phase:
+  `f2378e70dc4028fa40f9d1bd2a5c540a1f67bac0`, CI `34647334507` PASS across Format,
+  Vet, explicit SQLite migration tests, full Go tests, ShellCheck, installer syntax/unit
+  tests, Docker prerequisites, Docker build, Compose config validation, and Telemt
+  E2E/rerun.
 
 ## Explicit blockers
 
@@ -340,47 +347,45 @@ The remaining roadmap CI items were compared against the current repository prim
 No additional implementation milestone is scoped from these items until its tooling and
 acceptance contract are repository-defined or otherwise explicitly established.
 
-## Stage 11V — User inventory authoritative provisioning phase — SCOPED
+## Stage 11V — User inventory authoritative provisioning phase — COMPLETED AT CP-068
 
-The roadmap asks User surfaces to expose secret-related status, but the repository has
-no authoritative generic "secret status" contract and this milestone must not invent
-one. The existing `proxy_user_provisioning.phase` field is already an authoritative,
-durable lifecycle contract with exactly the established `prepared`, `owned`, and
-`collision` values. Stage 11V exposes only that exact stored phase as a separate
-`provisioning_phase` read field.
+CP-068 extends the existing authenticated User inventory reads with the authoritative
+stored `proxy_user_provisioning.phase` value and does not infer a generic secret status.
+The read model LEFT JOINs provisioning state by `proxy_user_id`, exposes JSON
+`provisioning_phase: null` when no durable row exists, and otherwise returns only one of
+the established `prepared`, `owned`, or `collision` phase constants after fail-closed
+validation.
 
-Intended code diff is exactly:
+The `/users` page adds one `Provisioning phase` column. It renders the exact phase
+literally, or the explicit safe text `not provisioned` when absent. Existing
+newest-first bounded pagination, exact Telegram/proxy filters, no-store behavior,
+lifecycle actions, CSRF behavior, Credit Bucket projection, referral count, and safe
+empty states remain unchanged.
+
+The final scoped code diff contains exactly:
 - `internal/useradmin/list.go`
 - `internal/useradmin/list_test.go`
 - `internal/httpapi/users_test.go`
 - `internal/httpapi/users_page.go`
 - `internal/httpapi/users_page_test.go`
 
-The User inventory read model will LEFT JOIN the existing provisioning table by
-`proxy_user_id`, return JSON `provisioning_phase: null` when no durable provisioning row
-exists, and otherwise return only the exact stored phase after validating it against the
-three existing `proxyprovision.Phase` constants. The `/users` page will add a single
-`Provisioning phase` column that renders the exact phase literally, or the explicit safe
-text `not provisioned` when absent. Existing newest-first bounded pagination, exact
-Telegram/proxy filters, no-store behavior, lifecycle actions, CSRF behavior, Credit
-Bucket projection, referral count, and safe empty states remain unchanged.
-
-No secret digest or plaintext secret will be selected, serialized, rendered, logged, or
+No secret digest or plaintext secret is selected, serialized, rendered, logged, or
 otherwise exposed. No migration, write path, Telemt request, provisioning transition,
 secret rotation semantic, Node/Sponsor assignment/routing, audit wiring, Bot behavior,
 RBAC enforcement, backup/update/restart/log behavior, Dashboard metric, or lifecycle
-boundary changes are in scope.
+boundary changed. Regression coverage verifies prepared versus absent provisioning
+state in API/page pagination and includes authoritative-state no-mutation checks.
 
-Acceptance requires this scope-doc CI to PASS before code change. The implementation
-candidate must then PASS Format, Vet, explicit SQLite migration tests, full Go tests,
-ShellCheck, installer syntax/unit tests, Docker prerequisites, Docker build, Compose
-config validation, and Telemt E2E/rerun before a new code checkpoint is promoted.
+Stage 11V scope docs `a37f479658667e618adb351cc2342149b17a12f3`
+passed CI `34646836783`. Candidate `f2378e70dc4028fa40f9d1bd2a5c540a1f67bac0`
+passed CI `34647334507` across Format, Vet, explicit SQLite migration tests, full Go
+tests, ShellCheck, installer syntax/unit tests, Docker prerequisites, Docker build,
+Compose config validation, and Telemt E2E/rerun.
 
 ## Current next action
 
-Require PASS for the Stage 11V scope-doc CI. Then implement exactly the five-file
-read-only provisioning-phase inventory diff above, self-review the complete diff,
-require full candidate CI PASS, promote the checkpoint in this plan, require promotion
-CI PASS, and only then inspect the remaining roadmap for another independent milestone
-whose semantics are already established. Preserve every explicit blocker and never
-infer generic secret status from provisioning phase.
+Promote CP-068 documentation only and require full CI PASS. Then inspect the remaining
+roadmap and current repository contracts for the next independent milestone whose
+semantics and tooling are already established. Preserve every explicit blocker,
+lifecycle separation, and Credit Buckets as authoritative quota/reward state; do not
+invent missing product/runtime semantics.
