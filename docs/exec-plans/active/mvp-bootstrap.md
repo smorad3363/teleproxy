@@ -3,7 +3,7 @@
 Status: ACTIVE
 Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
-Latest verified checkpoint: `88465adede77f118c9507b016bd38274bd2408f0`
+Latest verified checkpoint: `10dbde635dc8909e9bcbbe633ff659fc9934480e`
 
 ## Recovery contract
 
@@ -59,47 +59,16 @@ Non-negotiable architecture: SQLite WAL/NORMAL is authoritative Control Plane st
 - CP-045 Authenticated Start Gift settings API: `e7ac0ccdd4747667dec8681452b3ace4e4539fd0`, CI `34542385124` PASS.
 - CP-046 Web Panel Start Gift settings surface: `198100a015195c5ac64c13ddb4eea90e1c653eb6`, CI `34543281630` PASS.
 - CP-047 Bot Content persistence primitives: `88465adede77f118c9507b016bd38274bd2408f0`, CI `34543883064` PASS.
+- CP-048 Authenticated Bot Content Admin API: `10dbde635dc8909e9bcbbe633ff659fc9934480e`, CI `34544396136` PASS.
 
-### CP-042 implemented
+### Recent implemented checkpoints
 
-- authenticated server-rendered `/forced-join` lists every authoritative Forced Join channel in existing deterministic `position,id` order, including disabled and optional records.
-- create/edit/delete controls use the existing CP-027 API and CSRF contract; no Telegram membership behavior changed.
-- candidate `4b28df5b30e1686a0f43400df7425e400b5951b6` passed full CI `34530056110`.
-
-### CP-043 implemented
-
-- added authenticated read-only `GET /api/users` plus `internal/useradmin` read model over authoritative SQLite only.
-- exposes persisted identity/state, Credit Bucket projection, durable inviter attribution count and timestamps with bounded deterministic pagination.
-- no Telegram/Telemt calls, user mutations or inferred fields.
-- publication partial commits were repaired by fast-forward only to `5f513acd1849313beee05cd739640aad4b507e7a`; full CI `34541388012` PASS.
-
-### CP-044 implemented
-
-- added authenticated server-rendered read-only `/users` over CP-043, no-store and deterministic pagination.
-- no user actions, inferred fields or network calls.
-- candidate `64dece67e2e0b9e2c2a9e2653b6fee42921c4450` passed full CI `34541946964`.
-
-### CP-045 implemented
-
-- added authenticated `GET /api/settings/start-gift` and CSRF-protected `PUT /api/settings/start-gift` over the existing exactly-once Start Gift setting.
-- changing the setting affects only future ungifted users; historical Credit Buckets remain unchanged.
-- candidate `e7ac0ccdd4747667dec8681452b3ace4e4539fd0` passed full CI `34542385124`.
-
-### CP-046 implemented
-
-- added authenticated server-rendered `/settings` limited to Start Gift configuration.
-- preserves exact positive int64 decimal values in browser/API wiring, including above JavaScript safe-integer range.
-- candidate `198100a015195c5ac64c13ddb4eea90e1c653eb6` passed full CI `34543281630`.
-
-### CP-047 implemented
-
-- added additive migration `013_bot_content.sql` with one row per fixed roadmap text slot: `welcome`, `forced_join`, `referral`, `proxy`, `expired`, `no_credit`, `support`.
-- added `internal/botcontent` literal-text persistence primitives with `Set`, `Get`, deterministic `List`, and `Clear`; absent rows remain absent overrides.
-- validation requires a fixed slot, valid UTF-8, non-empty text and at most 4096 Unicode code points; stored values are revalidated on read.
-- updates preserve the original `created_at` and advance `updated_at`; clear affects only the requested slot.
-- no Web/API surface, Bot delivery/wiring, fallback/default copy, templates/placeholders, parse-mode, button labels, emoji configuration, secrets or network calls were added.
-- first candidate `f9b5ad04d232ec9eee33fe56da18061fe1da0d67` had Format/Vet and the new Bot Content tests green but CI `34543744898` failed because three pre-existing migration-count assertions still expected 12 migrations.
-- repaired forward only through `74071dfa9d54783ee39da1cad94313f945faa560` and final coherent head `88465adede77f118c9507b016bd38274bd2408f0`; no reset/force/history rewrite. Final full CI `34543883064` PASS.
+- CP-043 added authenticated read-only User inventory API from authoritative SQLite only; candidate `5f513acd...`, CI `34541388012` PASS.
+- CP-044 added read-only `/users` Web Panel; candidate `64dece67...`, CI `34541946964` PASS.
+- CP-045 added authenticated Start Gift settings API preserving exactly-once Credit Bucket history; candidate `e7ac0ccd...`, CI `34542385124` PASS.
+- CP-046 added `/settings` Start Gift Web Panel with exact int64 browser handling; candidate `198100a0...`, CI `34543281630` PASS.
+- CP-047 added migration `013_bot_content.sql` plus literal-text Bot Content persistence for seven fixed roadmap slots. Initial `f9b5ad04...` CI failed only because legacy migration-count tests expected 12; forward repair ended at `88465ade...`, CI `34543883064` PASS.
+- CP-048 added authenticated `GET /api/bot-content`, CSRF-protected per-slot `PUT` and `DELETE`, bounded strict JSON, typed Problems, deterministic configured-only list and empty `[]`. No Bot runtime wiring or network calls. Candidate `10dbde63...`, CI `34544396136` PASS.
 
 ## Supplied source hashes
 
@@ -117,24 +86,24 @@ Telemt `3.5.7`, upstream commit `4ca7418442478cd92f9e861c21977a81b249efc8`.
 
 ## Active stage
 
-### Stage 11F — Authenticated Bot Content Admin API — ACTIVE
+### Stage 11G — Web Panel Bot Content management surface — ACTIVE
 
-Roadmap basis: Web Panel Bot Content requires management of welcome, forced join, referral, proxy, expired, no-credit and support copy. CP-047 now provides a durable literal-text override domain for exactly those seven slots. This milestone exposes only that domain through authenticated Admin API routes; runtime Bot delivery remains unchanged.
+Roadmap basis: Web Panel Bot Content explicitly requires management of welcome, forced join, referral, proxy, expired, no-credit and support content. CP-047/048 now provide fixed-slot persistence and authenticated mutation APIs. This milestone adds only a minimal server-rendered management page; Bot runtime delivery remains unchanged.
 
 Scope only:
-- add authenticated `GET /api/bot-content` returning configured overrides only in the domain's deterministic order; empty list must be `[]` and responses are `no-store`;
-- add CSRF-protected `PUT /api/bot-content/{slot}` using bounded JSON `{text}` and CP-047 `Set`;
-- add CSRF-protected `DELETE /api/bot-content/{slot}` using CP-047 `Clear`;
-- reject unknown slots, invalid text, malformed/unknown/trailing/oversized JSON with typed safe Problem responses;
-- map missing DELETE target to typed 404 without leaking internals;
-- no migration, no default/fallback copy, no templates/placeholders, parse-mode, button-label/emoji settings, Web Panel page, Telegram/Telemt call or Bot runtime wiring.
+- add authenticated server-rendered `/bot-content` showing all seven fixed roadmap slots, including an explicit not-configured state for absent overrides;
+- render configured literal text with `html/template` escaping and `Cache-Control: no-store`;
+- save configured text only through same-origin CP-048 `PUT /api/bot-content/{slot}` with session-derived CSRF;
+- clear an override only through CP-048 `DELETE /api/bot-content/{slot}` with session-derived CSRF;
+- add the smallest Dashboard/navigation link required to reach the page;
+- no default/fallback copy, templates/placeholders, parse-mode/HTML/Markdown semantics, button labels, emoji settings, Bot runtime wiring, Telegram/Telemt call, migration or unrelated settings UI.
 
 Acceptance:
-- GET/PUT/DELETE follow existing Admin API auth/CSRF conventions and successful responses are `Cache-Control: no-store`;
-- empty GET returns `[]`; configured entries preserve literal Unicode text and deterministic slot order;
-- PUT upserts only the addressed fixed slot and DELETE clears only that override;
-- invalid slot/text/JSON/body size fail with safe typed Problems and no mutation;
-- Bot Content API does not mutate Credit Buckets, referrals, Forced Join, Users, Sponsors or Nodes and performs no network calls;
+- unauthenticated page redirects under existing Web Panel behavior; authenticated page is no-store;
+- all seven fixed slots appear even when no overrides exist; absent slots are visibly not configured and no copy is fabricated;
+- configured Unicode text round-trips and is safely escaped in HTML;
+- browser wiring targets only CP-048 same-origin PUT/DELETE endpoints and includes CSRF;
+- page render does not mutate Bot Content or unrelated authoritative tables;
 - existing Bot `/start`, Forced Join, referral, proxy, User, Node/Sponsor and settings behavior remains unchanged;
 - format/vet/test and Docker/Telemt E2E remain green.
 
@@ -153,29 +122,22 @@ Roadmap requires configurable daily/weekly caps, cooldowns, blacklist and suspic
 ## Important decisions
 
 - Credit Buckets are source of truth; Telemt is only enforcement projection.
-- Telemt disable cancels active sessions; quota `0` blocks traffic.
-- Bot token/webhook secret are protected runtime files, never ordinary SQLite settings.
-- Telemt user view reconstructs proxy links from Telemt-managed secret; Control Plane does not persist MTProto plaintext.
-- Forced Join gates gift and provisioning; referral attribution is durable before the Forced Join recheck gap.
-- Referral credit recipient semantics remain unresolved; do not issue referral rewards.
-- Sponsor Profile persistence is independent of assignment routing; sticky/weighted assignment and Telemt projection remain separate later milestones.
-- CP-047 still leaves `TPROXY_TELEMT_API_URL`, current compose topology and quota reconciliation targeting one global Telemt service.
-- Relay records are schema-readiness metadata only; no Iran Relay tunnel runtime exists yet.
-- Existing Web Panel remains server-rendered/minimal; do not introduce a frontend framework for isolated management surfaces.
-- User surfaces must not infer Telegram username, Node/Sponsor assignment or general last activity absent from schema.
-- Start Gift configuration changes only future exactly-once grants; historical Credit Buckets remain authoritative.
-- Bot Content stores literal text overrides only; absent slots stay absent. Defaults, templates/formatting, button labels/emoji and runtime Bot wiring are separate contracts.
+- Bot token/webhook secret remain protected runtime files, never ordinary SQLite settings.
+- Forced Join gates gift and provisioning; referral reward recipient remains unresolved.
+- Sponsor persistence remains independent of assignment routing; current global Telemt topology remains unchanged.
+- User surfaces do not infer schema-absent Telegram username, Node/Sponsor assignment or general last activity.
+- Start Gift configuration affects only future exactly-once grants.
+- Bot Content remains literal text overrides only. Absent slots stay absent; runtime defaults, templates/formatting, buttons/emoji and Bot delivery wiring are separate contracts.
 
 ## Validation/failure log
 
-- Prior transport/format issues were repaired without weakening production validation; no reset/force-push was used.
-- CP-042 promotion docs `461dc9c9...` CI `34530542473` PASS.
-- CP-043 candidate `5f513acd...` CI `34541388012` PASS; promotion docs `d1587d80...` CI `34541753619` PASS.
-- CP-044 candidate `64dece67...` CI `34541946964` PASS; promotion docs `8cd4bb75...` CI `34542199493` PASS.
-- CP-045 candidate `e7ac0ccd...` CI `34542385124` PASS; promotion docs `f10af71b...` CI `34542712114` PASS.
-- CP-046 candidate `198100a0...` CI `34543281630` PASS; promotion docs `fc7eae47...` CI `34543545636` PASS.
-- CP-047 initial candidate `f9b5ad04...` CI `34543744898` FAIL only in legacy migration-count expectations (new package tests passed). Forward repair commits `74071dfa...` and `88465ade...`; final CI `34543883064` PASS across full Go and installer/Docker/Telemt E2E validation.
+- No reset/force-push/clean was used for repository recovery or milestone repair.
+- CP-046 promotion docs `fc7eae47...` CI `34543545636` PASS.
+- CP-047 initial `f9b5ad04...` CI `34543744898` FAIL only in stale migration-count assertions; forward repair `74071dfa...` → `88465ade...`; final CI `34543883064` PASS.
+- CP-047 promotion docs `b4468969...` CI `34544137155` PASS.
+- CP-048 candidate `10dbde63...` CI `34544396136` PASS across full Go and installer/Docker/Telemt E2E validation.
+- One initial 11F `create_tree` connector call was tool-blocked before any branch move; retry succeeded with the same three staged blobs. No repository state was changed by the blocked call.
 
 ## Current next action
 
-Verify the CP-047 promotion docs-head CI. Then implement only Stage 11F: authenticated Bot Content Admin API over CP-047 literal-text primitives. Keep Bot runtime delivery/wiring, default/fallback copy, templates/placeholders/formatting, button labels/emoji, secrets, user-specific mutations, reward issuance, unresolved anti-abuse policy, Node runtime probing, multi-Telemt routing and installer/compose behavior unchanged.
+Verify the CP-048 promotion docs-head CI. Then implement only Stage 11G Web Panel Bot Content management over CP-048. Keep Bot runtime delivery/wiring, fallback/default copy, templates/placeholders/formatting, button labels/emoji, secrets, reward issuance, unresolved anti-abuse policy, Node runtime probing, multi-Telemt routing and installer/compose behavior unchanged.
