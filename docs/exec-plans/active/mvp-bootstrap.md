@@ -5,8 +5,8 @@ Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
 Latest verified code checkpoint: `f2378e70dc4028fa40f9d1bd2a5c540a1f67bac0` (CP-068)
 Most recent verified code CI: `34647334507` PASS
-Current branch checkpoint: `f2378e70dc4028fa40f9d1bd2a5c540a1f67bac0` (CP-068 candidate)
-Current branch CI: `34647334507` PASS
+Current branch checkpoint: `73d518047cb5365c13b0ea116e5d08068099c2bf` (CP-068 promotion docs)
+Current branch CI: `34647743764` PASS
 
 Historical execution detail through CP-059 is preserved byte-for-byte at
 `docs/exec-plans/archive/mvp-bootstrap-through-cp059.md`, using the prior active-plan
@@ -120,6 +120,8 @@ was published.
   Vet, explicit SQLite migration tests, full Go tests, ShellCheck, installer syntax/unit
   tests, Docker prerequisites, Docker build, Compose config validation, and Telemt
   E2E/rerun.
+- CP-068 promotion docs:
+  `73d518047cb5365c13b0ea116e5d08068099c2bf`, CI `34647743764` PASS.
 
 ## Explicit blockers
 
@@ -382,10 +384,50 @@ passed CI `34647334507` across Format, Vet, explicit SQLite migration tests, ful
 tests, ShellCheck, installer syntax/unit tests, Docker prerequisites, Docker build,
 Compose config validation, and Telemt E2E/rerun.
 
+## Stage 11W — User inventory exact provisioning phase filter — SCOPED
+
+CP-068 established `provisioning_phase` as an authoritative read field with exactly the
+existing durable `prepared`, `owned`, and `collision` values. Stage 11W adds only an
+optional exact filter over that same stored field to the authenticated `GET /api/users`
+and `/users` inventory surfaces.
+
+Intended code diff is exactly:
+- `internal/useradmin/list.go`
+- `internal/useradmin/list_test.go`
+- `internal/httpapi/users.go`
+- `internal/httpapi/users_test.go`
+- `internal/httpapi/users_page.go`
+- `internal/httpapi/users_page_test.go`
+
+The domain query will accept only the three existing `proxyprovision.Phase` constants
+and, when present, apply exact `pp.phase = ?` alongside the existing Telegram ID,
+proxy-username, `before_id`, and bounded-limit semantics using logical AND. Rows with no
+provisioning record are naturally excluded by an active exact phase filter. No synthetic
+`not_provisioned` query value or generic secret-status category will be introduced.
+
+The HTTP parser will accept exactly one non-empty `provisioning_phase` query parameter
+with one of `prepared`, `owned`, or `collision`; empty, duplicate, unknown, or differently
+cased values return the existing `USER_INVENTORY_INVALID` Problem contract. The Web
+Panel will expose an All/prepared/owned/collision selector. All omits the query parameter,
+while an active exact phase plus existing Telegram/proxy filters and explicit limit are
+preserved in Older users pagination.
+
+The change remains read-only and no-store. It does not select or expose secret digests or
+plaintext secrets, and it adds no migration, write path, provisioning transition,
+Telemt request, secret rotation semantics, Node/Sponsor assignment/routing, audit
+wiring, Bot behavior, RBAC enforcement, backup/update/restart/log behavior, Dashboard
+metric, or lifecycle-boundary change.
+
+Acceptance requires this scope-doc CI to PASS before code change. The candidate must
+then PASS Format, Vet, explicit SQLite migration tests, full Go tests, ShellCheck,
+installer syntax/unit tests, Docker prerequisites, Docker build, Compose config
+validation, and Telemt E2E/rerun before a new code checkpoint is promoted.
+
 ## Current next action
 
-Promote CP-068 documentation only and require full CI PASS. Then inspect the remaining
-roadmap and current repository contracts for the next independent milestone whose
-semantics and tooling are already established. Preserve every explicit blocker,
-lifecycle separation, and Credit Buckets as authoritative quota/reward state; do not
-invent missing product/runtime semantics.
+Require PASS for the Stage 11W scope-doc CI. Then implement exactly the six-file
+read-only exact provisioning-phase filter diff above, self-review the complete diff,
+require full candidate CI PASS, promote the checkpoint in this plan, require promotion
+CI PASS, and only then inspect the remaining roadmap for another independent milestone
+whose semantics are already established. Preserve every explicit blocker and never
+invent a generic secret-status or absent-provisioning filter token.
