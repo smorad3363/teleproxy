@@ -16,7 +16,7 @@ while (($#)); do
 done
 
 [[ -n "$SOURCE_DIR" && -d "$SOURCE_DIR" ]] || { echo "--source-dir is required" >&2; exit 2; }
-# shellcheck source=install_lib.sh
+# shellcheck source=scripts/install_lib.sh
 source "$SOURCE_DIR/scripts/install_lib.sh"
 [[ ${EUID:-$(id -u)} -eq 0 ]] || { echo "run installer as root (for example: sudo bash)" >&2; exit 1; }
 

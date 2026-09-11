@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-# shellcheck source=../scripts/install_lib.sh
+# shellcheck source=scripts/install_lib.sh
 source "$ROOT/scripts/install_lib.sh"
 
 tmp=$(mktemp -d)
