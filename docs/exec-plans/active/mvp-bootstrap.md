@@ -3,10 +3,10 @@
 Status: ACTIVE
 Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
-Latest verified code checkpoint: `8993aee8b9d980990504fe25261eb4c29879316e` (CP-061)
-Most recent verified code CI: `34615741067` PASS
-Current branch checkpoint: `a440758caf316d41d50e9f9bb8ce6b70d93ef42e` (CP-061 promotion docs)
-Current branch CI: `34616097813` PASS
+Latest verified code checkpoint: `046d487f38ebbbe30ba8dd753ce728f781042b04` (CP-062)
+Most recent verified code CI: `34620300934` PASS
+Current branch checkpoint: `046d487f38ebbbe30ba8dd753ce728f781042b04` (CP-062 candidate)
+Current branch CI: `34620300934` PASS
 
 Historical execution detail through CP-059 is preserved byte-for-byte at
 `docs/exec-plans/archive/mvp-bootstrap-through-cp059.md`, using the prior active-plan
@@ -46,6 +46,17 @@ was published.
   `8993aee8b9d980990504fe25261eb4c29879316e`, CI `34615741067` PASS.
 - CP-061 promotion docs:
   `a440758caf316d41d50e9f9bb8ce6b70d93ef42e`, CI `34616097813` PASS.
+- Stage 11U scope docs:
+  `08776242d9ec8f83114082d405037a259bfb46cf`, CI `34616505248` PASS.
+- Stage 11U first candidate:
+  `8bdbdcb3adefc95fdb4000c47fbbebb6560846e8`, CI `34620149594` FAILED at Vet because
+  `validRejectionReason` duplicated the already-established package helper in
+  `internal/referral/eligibility.go`; Test and installer were skipped. This failure was
+  repaired forward without reset or force-push.
+- CP-062 Referral history authoritative exact rejection-reason filter:
+  `046d487f38ebbbe30ba8dd753ce728f781042b04`, CI `34620300934` PASS across Format,
+  Vet, full Go tests, installer syntax/unit tests, Docker prerequisites, and Telemt
+  E2E/rerun.
 
 ## Explicit blockers
 
@@ -80,63 +91,44 @@ exact `status` filter accepting the already-established `pending`, `rewarded`, a
 `rejected` constants. It preserves no-store/read-only behavior and bounded newest-first
 pagination. No reward or anti-abuse write semantics were added.
 
-## Stage 11U — Referral history authoritative exact rejection-reason filter — ACTIVE
+## Stage 11U — Referral history authoritative exact rejection-reason filter — COMPLETED AT CP-062
 
-Scope is limited to extending the existing authenticated `GET /api/referral/history`
-and `GET /referrals` read contracts with one optional, single-value exact
-`rejection_reason` filter over the already-stored
-`referral_attributions.rejection_reason` field.
+CP-062 extends the existing authenticated `GET /api/referral/history` and
+`GET /referrals` read contracts with one optional exact `rejection_reason` filter over
+the authoritative stored `referral_attributions.rejection_reason` field.
 
-Accepted values are exactly the six already-established `referral.RejectionReason`
-constants:
+Accepted values are exactly the six established `referral.RejectionReason` constants:
+`anti_abuse`, `daily_cap`, `weekly_cap`, `cooldown`, `blacklist`, and `suspicious`.
+The domain read model reuses the existing package `validRejectionReason` validator,
+applies exact `ra.rejection_reason = ?`, and composes independently with optional
+`status` and `before_id` using logical AND. It does not infer `status=rejected`;
+contradictory filters return an empty result.
 
-- `anti_abuse`
-- `daily_cap`
-- `weekly_cap`
-- `cooldown`
-- `blacklist`
-- `suspicious`
+The HTTP parser rejects empty, duplicate, unknown, differently-cased, or otherwise
+invalid reason values with the existing `REFERRAL_HISTORY_INVALID` Problem contract.
+The `/referrals` page exposes All plus only the six established reasons; All omits the
+query parameter, while active status/reason and explicit limit survive Older referrals
+pagination.
 
-No new rejection reason, fraud score, cap, cooldown rule, blacklist meaning, or
-suspicious-classification logic is introduced. This milestone only lets an admin read
-records that already carry one of those stored reasons.
-
-`referral.HistoryQuery` may carry the exact rejection reason. The read model validates
-a non-empty filter against the six existing constants and applies
-`ra.rejection_reason = ?`. It composes independently with optional `status` and
-`before_id` using logical AND. It must not infer `status=rejected` when a rejection
-reason is supplied; contradictory filters simply return an empty read result.
-Newest-first ID ordering, `limit + 1` pagination, stored fields, and read-only behavior
-remain unchanged.
-
-The HTTP parser may additionally accept one `rejection_reason` query value. Empty,
-duplicate, unknown, differently-cased, or otherwise invalid values continue to use
-the existing `REFERRAL_HISTORY_INVALID` Problem contract.
-
-The `/referrals` page adds a minimal GET rejection-reason selector containing All plus
-only those six established values. Choosing All omits the query parameter. Active
-`status`, active `rejection_reason`, and explicit `limit` are retained in Older
-referrals pagination. Existing reward settings and status filtering remain unchanged.
+The final scoped diff contains exactly:
+- `internal/referral/history.go`
+- `internal/httpapi/referral_history.go`
+- `internal/httpapi/referral_page.go`
+- `internal/referral/history_rejection_reason_filter_test.go`
+- `internal/httpapi/referral_history_rejection_reason_filter_test.go`
+- `internal/httpapi/referral_page_rejection_reason_filter_test.go`
 
 No endpoint, migration, write path, anti-abuse policy, suspicious scoring, reward
 recipient/issuance, eligibility/finalization mutation, referral tree, inviter/invitee
 user-scoped filtering, assignment/routing, audit wiring, Bot behavior, per-Node
-credentials/health, Telemt topology, or secret persistence is introduced.
-
-### Acceptance
-
-- Domain filtering returns only the exact requested stored rejection reason.
-- `rejection_reason` composes with `status` and `before_id` without inferred status.
-- API accepts only one exact established rejection reason and rejects empty,
-  duplicate, unknown, and differently-cased values with `REFERRAL_HISTORY_INVALID`.
-- `/referrals` renders only All plus the six established reason choices and preserves
-  active filters plus explicit limit in Older referrals links.
-- Unfiltered and status-only API/page behavior remains unchanged.
-- GET remains no-store/read-only; focused domain/API/page tests and full CI pass.
+credentials/health, Telemt topology, or secret persistence was added. GET remains
+no-store/read-only and regression coverage verifies exact filtering, independent
+status composition, bounded pagination, invalid-query rejection, and no authoritative
+state mutation.
 
 ## Current next action
 
-Publish this Stage 11U scope as a plan-only commit and require full CI PASS. Then
-implement only the authoritative exact rejection-reason filter described above,
-self-review the bounded diff, and require full CI again before checkpoint promotion.
-Preserve Credit Buckets as source of truth and every blocker above.
+Promote CP-062 documentation only and require full CI PASS. Then inspect the roadmap
+and current repository contracts for the next semantics-established bounded milestone.
+Preserve Credit Buckets as source of truth and every blocker above; do not invent
+missing product/runtime semantics.
