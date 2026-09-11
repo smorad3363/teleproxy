@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/smorad3363/teleproxy/internal/admin"
+	"github.com/smorad3363/teleproxy/internal/proxyprovision"
 	"github.com/smorad3363/teleproxy/internal/telegramuser"
 	"github.com/smorad3363/teleproxy/internal/useradmin"
 )
@@ -47,15 +48,24 @@ func TestUserInventoryAPIPaginatesWithoutMutation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, created, err := proxyprovision.Prepare(ctx, db, secondUser.User.ProxyUsername, [32]byte{1}, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	} else if !created {
+		t.Fatal("proxyprovision.Prepare() created = false")
+	}
 
 	beforeTelegram := countHTTPRows(t, db, "telegram_users")
 	beforeProxy := countHTTPRows(t, db, "proxy_users")
+	beforeProvisioning := countHTTPRows(t, db, "proxy_user_provisioning")
 	beforeReferrals := countHTTPRows(t, db, "referral_attributions")
 	beforeCredits := countHTTPRows(t, db, "credit_buckets")
 
 	firstResponse := performJSON(server.Handler(), http.MethodGet, "/api/users?limit=1", "", cookie, "")
 	if firstResponse.Code != http.StatusOK {
 		t.Fatalf("first users page = %d %s", firstResponse.Code, firstResponse.Body.String())
+	}
+	if strings.Contains(firstResponse.Body.String(), "secret_sha256") {
+		t.Fatalf("first users page exposed provisioning secret digest: %s", firstResponse.Body.String())
 	}
 	var firstPage struct {
 		Users        []useradmin.Entry `json:"users"`
@@ -66,6 +76,9 @@ func TestUserInventoryAPIPaginatesWithoutMutation(t *testing.T) {
 	}
 	if len(firstPage.Users) != 1 || firstPage.Users[0].TelegramUserID != secondUser.User.ID || firstPage.Users[0].TelegramID != 9202 {
 		t.Fatalf("first users page = %#v", firstPage)
+	}
+	if firstPage.Users[0].ProvisioningPhase == nil || *firstPage.Users[0].ProvisioningPhase != proxyprovision.PhasePrepared {
+		t.Fatalf("first provisioning phase = %v, want prepared", firstPage.Users[0].ProvisioningPhase)
 	}
 	if firstPage.NextBeforeID == nil || *firstPage.NextBeforeID != secondUser.User.ID {
 		t.Fatalf("first next_before_id = %v", firstPage.NextBeforeID)
@@ -85,8 +98,11 @@ func TestUserInventoryAPIPaginatesWithoutMutation(t *testing.T) {
 	if len(secondPage.Users) != 1 || secondPage.Users[0].TelegramUserID != firstUser.User.ID || secondPage.NextBeforeID != nil {
 		t.Fatalf("second users page = %#v", secondPage)
 	}
+	if secondPage.Users[0].ProvisioningPhase != nil {
+		t.Fatalf("second provisioning phase = %v, want nil", secondPage.Users[0].ProvisioningPhase)
+	}
 
-	if countHTTPRows(t, db, "telegram_users") != beforeTelegram || countHTTPRows(t, db, "proxy_users") != beforeProxy || countHTTPRows(t, db, "referral_attributions") != beforeReferrals || countHTTPRows(t, db, "credit_buckets") != beforeCredits {
+	if countHTTPRows(t, db, "telegram_users") != beforeTelegram || countHTTPRows(t, db, "proxy_users") != beforeProxy || countHTTPRows(t, db, "proxy_user_provisioning") != beforeProvisioning || countHTTPRows(t, db, "referral_attributions") != beforeReferrals || countHTTPRows(t, db, "credit_buckets") != beforeCredits {
 		t.Fatal("user inventory API mutated authoritative state")
 	}
 }

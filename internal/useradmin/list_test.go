@@ -9,6 +9,7 @@ import (
 
 	"github.com/smorad3363/teleproxy/internal/credit"
 	"github.com/smorad3363/teleproxy/internal/database"
+	"github.com/smorad3363/teleproxy/internal/proxyprovision"
 	"github.com/smorad3363/teleproxy/internal/proxyuser"
 	"github.com/smorad3363/teleproxy/internal/referral"
 	"github.com/smorad3363/teleproxy/internal/telegramuser"
@@ -27,6 +28,11 @@ func TestListProjectsAuthoritativeStateAndPaginates(t *testing.T) {
 	}
 	if _, err := proxyuser.MarkSyncError(ctx, db, inviter.User.ProxyUsername, "TELEMT_UNAVAILABLE"); err != nil {
 		t.Fatal(err)
+	}
+	if _, created, err := proxyprovision.Prepare(ctx, db, inviter.User.ProxyUsername, [32]byte{1}, now); err != nil {
+		t.Fatal(err)
+	} else if !created {
+		t.Fatal("proxyprovision.Prepare() created = false")
 	}
 
 	expiresSoon := now.Add(2 * time.Hour)
@@ -80,6 +86,9 @@ func TestListProjectsAuthoritativeStateAndPaginates(t *testing.T) {
 	if entry.DesiredEnabled || entry.SyncState != proxyuser.SyncError || entry.LastErrorCode != "TELEMT_UNAVAILABLE" {
 		t.Fatalf("proxy state = %#v", entry)
 	}
+	if entry.ProvisioningPhase == nil || *entry.ProvisioningPhase != proxyprovision.PhasePrepared {
+		t.Fatalf("provisioning phase = %v, want prepared", entry.ProvisioningPhase)
+	}
 	if entry.AvailableBytes != 1500 || entry.NearestExpiry == nil || !entry.NearestExpiry.Equal(expiresSoon) {
 		t.Fatalf("credit projection = %#v", entry)
 	}
@@ -96,6 +105,9 @@ func TestListProjectsAuthoritativeStateAndPaginates(t *testing.T) {
 	}
 	if len(second.Items) != 2 || second.Items[0].TelegramUserID != invitee2.User.ID || second.Items[1].TelegramUserID != invitee1.User.ID || second.NextBeforeID != nil {
 		t.Fatalf("second page = %#v", second)
+	}
+	if second.Items[0].ProvisioningPhase != nil || second.Items[1].ProvisioningPhase != nil {
+		t.Fatalf("unprovisioned phases = %v, %v, want nil", second.Items[0].ProvisioningPhase, second.Items[1].ProvisioningPhase)
 	}
 }
 

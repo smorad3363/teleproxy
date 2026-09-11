@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/smorad3363/teleproxy/internal/proxyprovision"
 	"github.com/smorad3363/teleproxy/internal/useradmin"
 )
 
@@ -37,6 +38,12 @@ var userPageTemplate = template.Must(template.New("users").Funcs(template.FuncMa
 		}
 		return value
 	},
+	"userProvisioningPhase": func(value *proxyprovision.Phase) string {
+		if value == nil {
+			return "not provisioned"
+		}
+		return string(*value)
+	},
 }).Parse(`<!doctype html>
 <html lang="en">
 <head>
@@ -44,14 +51,14 @@ var userPageTemplate = template.Must(template.New("users").Funcs(template.FuncMa
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Teleproxy Users</title>
 <style>
-:root{font-family:Inter,ui-sans-serif,system-ui,sans-serif;color-scheme:dark;background:#0b1020;color:#eef2ff}*{box-sizing:border-box}body{margin:0;background:#0b1020;color:#eef2ff}header{display:flex;gap:18px;justify-content:space-between;align-items:center;padding:18px 5vw;border-bottom:1px solid #24304c;background:#10172a}header nav{display:flex;gap:14px;align-items:center;flex-wrap:wrap}a{color:#c9d7ff}main{padding:30px 5vw 56px}.panel{border:1px solid #26324f;border-radius:16px;background:#11182a;padding:22px}.muted,.empty{color:#9aa8c4}.filters{display:flex;gap:12px;align-items:end;flex-wrap:wrap;margin:18px 0}.filters label{display:grid;gap:6px;font-size:12px;color:#aebbd6}.filters input{min-width:210px;border:1px solid #3a4a70;border-radius:8px;background:#0c1324;color:#eef2ff;padding:8px 10px}.filters button{border:1px solid #3a4a70;border-radius:8px;background:#18223a;color:#eef2ff;padding:8px 12px;cursor:pointer}.filters a{padding:8px 0}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;min-width:1390px}th,td{text-align:left;padding:10px;border-bottom:1px solid #26324f;vertical-align:top}th{font-size:12px;color:#aebbd6}td{font-size:13px}.tag{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.pager{margin-top:16px}.actions{display:flex;gap:8px;flex-wrap:wrap;min-width:190px}.actions button{border:1px solid #3a4a70;border-radius:8px;background:#18223a;color:#eef2ff;padding:7px 10px;cursor:pointer}.actions button:disabled{cursor:wait;opacity:.55}.action-status{min-height:18px;margin:8px 0 0;color:#b8c6e6;max-width:320px;overflow-wrap:anywhere}.action-status.error{color:#ffb8b8}.secret-reveal{margin-top:8px;padding:9px;border:1px solid #56698f;border-radius:8px;background:#0c1324;max-width:320px;overflow-wrap:anywhere}.secret-reveal code{display:block;margin-top:5px;white-space:pre-wrap;word-break:break-all}@media(max-width:600px){header{align-items:flex-start;flex-direction:column}}
+:root{font-family:Inter,ui-sans-serif,system-ui,sans-serif;color-scheme:dark;background:#0b1020;color:#eef2ff}*{box-sizing:border-box}body{margin:0;background:#0b1020;color:#eef2ff}header{display:flex;gap:18px;justify-content:space-between;align-items:center;padding:18px 5vw;border-bottom:1px solid #24304c;background:#10172a}header nav{display:flex;gap:14px;align-items:center;flex-wrap:wrap}a{color:#c9d7ff}main{padding:30px 5vw 56px}.panel{border:1px solid #26324f;border-radius:16px;background:#11182a;padding:22px}.muted,.empty{color:#9aa8c4}.filters{display:flex;gap:12px;align-items:end;flex-wrap:wrap;margin:18px 0}.filters label{display:grid;gap:6px;font-size:12px;color:#aebbd6}.filters input{min-width:210px;border:1px solid #3a4a70;border-radius:8px;background:#0c1324;color:#eef2ff;padding:8px 10px}.filters button{border:1px solid #3a4a70;border-radius:8px;background:#18223a;color:#eef2ff;padding:8px 12px;cursor:pointer}.filters a{padding:8px 0}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;min-width:1510px}th,td{text-align:left;padding:10px;border-bottom:1px solid #26324f;vertical-align:top}th{font-size:12px;color:#aebbd6}td{font-size:13px}.tag{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.pager{margin-top:16px}.actions{display:flex;gap:8px;flex-wrap:wrap;min-width:190px}.actions button{border:1px solid #3a4a70;border-radius:8px;background:#18223a;color:#eef2ff;padding:7px 10px;cursor:pointer}.actions button:disabled{cursor:wait;opacity:.55}.action-status{min-height:18px;margin:8px 0 0;color:#b8c6e6;max-width:320px;overflow-wrap:anywhere}.action-status.error{color:#ffb8b8}.secret-reveal{margin-top:8px;padding:9px;border:1px solid #56698f;border-radius:8px;background:#0c1324;max-width:320px;overflow-wrap:anywhere}.secret-reveal code{display:block;margin-top:5px;white-space:pre-wrap;word-break:break-all}@media(max-width:600px){header{align-items:flex-start;flex-direction:column}}
 </style>
 </head>
 <body>
 <header><nav><strong>Teleproxy</strong><a href="/">Dashboard</a><a href="/users" aria-current="page">Users</a><a href="/sponsors">Sponsors</a><a href="/nodes">Proxy Nodes</a><a href="/referrals">Referrals</a><a href="/forced-join">Forced Join</a></nav><span class="muted">Signed in as {{.Username}}</span></header>
 <main id="user-admin" data-csrf="{{.CSRF}}"><section class="panel">
 <h1>Users</h1>
-<p class="muted">Authoritative Control Plane inventory. Enable/Disable and Rotate secret use the established proxy lifecycle API. Telegram username, traffic, Node/Sponsor assignment, secret status and general last activity are not inferred.</p>
+<p class="muted">Authoritative Control Plane inventory. Provisioning phase is the exact durable lifecycle phase when present. Enable/Disable and Rotate secret use the established proxy lifecycle API. Telegram username, traffic, Node/Sponsor assignment, generic secret status and general last activity are not inferred.</p>
 <form class="filters" method="get" action="/users" data-user-filter-form>
 <label>Telegram ID<input type="text" name="telegram_id" inputmode="numeric" autocomplete="off" value="{{.TelegramIDFilter}}"></label>
 <label>Proxy username<input type="text" name="proxy_username" autocomplete="off" value="{{.ProxyUsernameFilter}}"></label>
@@ -60,10 +67,10 @@ var userPageTemplate = template.Must(template.New("users").Funcs(template.FuncMa
 </form>
 {{if .Users}}
 <div class="table-wrap"><table>
-<thead><tr><th>Telegram ID</th><th>Proxy username</th><th>Enabled</th><th>Sync state</th><th>Last error</th><th>Available bytes</th><th>Nearest expiry</th><th>Referrals</th><th>Created at</th><th>Updated at</th><th>Actions</th></tr></thead>
+<thead><tr><th>Telegram ID</th><th>Proxy username</th><th>Enabled</th><th>Sync state</th><th>Provisioning phase</th><th>Last error</th><th>Available bytes</th><th>Nearest expiry</th><th>Referrals</th><th>Created at</th><th>Updated at</th><th>Actions</th></tr></thead>
 <tbody>
 {{range .Users}}
-<tr data-proxy-username="{{.ProxyUsername}}"><td class="tag">{{.TelegramID}}</td><td class="tag">{{.ProxyUsername}}</td><td>{{.DesiredEnabled}}</td><td>{{.SyncState}}</td><td class="tag">{{userErrorCode .LastErrorCode}}</td><td class="tag">{{.AvailableBytes}}</td><td>{{userOptionalTime .NearestExpiry}}</td><td class="tag">{{.ReferralCount}}</td><td>{{userTime .CreatedAt}}</td><td>{{userTime .UpdatedAt}}</td><td>{{if .ProxyUsername}}<div class="actions">{{if .DesiredEnabled}}<button type="button" data-proxy-action="disable">Disable</button>{{else}}<button type="button" data-proxy-action="enable">Enable</button>{{end}}<button type="button" data-proxy-action="rotate-secret">Rotate secret</button><button type="button" data-proxy-action="reconcile">Reconcile quota</button></div><p class="action-status" data-action-status role="status" aria-live="polite"></p><div class="secret-reveal" data-secret-reveal hidden><strong>Shown once. Save it now; it will not be shown again.</strong><code data-secret-value></code></div>{{else}}<span class="muted" data-proxy-actions-unavailable>Unavailable</span>{{end}}</td></tr>
+<tr data-proxy-username="{{.ProxyUsername}}"><td class="tag">{{.TelegramID}}</td><td class="tag">{{.ProxyUsername}}</td><td>{{.DesiredEnabled}}</td><td>{{.SyncState}}</td><td class="tag">{{userProvisioningPhase .ProvisioningPhase}}</td><td class="tag">{{userErrorCode .LastErrorCode}}</td><td class="tag">{{.AvailableBytes}}</td><td>{{userOptionalTime .NearestExpiry}}</td><td class="tag">{{.ReferralCount}}</td><td>{{userTime .CreatedAt}}</td><td>{{userTime .UpdatedAt}}</td><td>{{if .ProxyUsername}}<div class="actions">{{if .DesiredEnabled}}<button type="button" data-proxy-action="disable">Disable</button>{{else}}<button type="button" data-proxy-action="enable">Enable</button>{{end}}<button type="button" data-proxy-action="rotate-secret">Rotate secret</button><button type="button" data-proxy-action="reconcile">Reconcile quota</button></div><p class="action-status" data-action-status role="status" aria-live="polite"></p><div class="secret-reveal" data-secret-reveal hidden><strong>Shown once. Save it now; it will not be shown again.</strong><code data-secret-value></code></div>{{else}}<span class="muted" data-proxy-actions-unavailable>Unavailable</span>{{end}}</td></tr>
 {{end}}
 </tbody></table></div>
 {{else}}{{if .HasFilters}}<p class="empty">No users match the current filters.</p>{{else}}<p class="empty">No Telegram users yet.</p>{{end}}{{end}}

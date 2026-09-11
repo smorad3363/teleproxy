@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/smorad3363/teleproxy/internal/proxyprovision"
 	"github.com/smorad3363/teleproxy/internal/proxyuser"
 )
 
@@ -23,18 +24,19 @@ type ListQuery struct {
 }
 
 type Entry struct {
-	TelegramUserID int64               `json:"telegram_user_id"`
-	TelegramID     int64               `json:"telegram_id"`
-	ProxyUserID    int64               `json:"proxy_user_id"`
-	ProxyUsername  string              `json:"proxy_username"`
-	DesiredEnabled bool                `json:"enabled"`
-	SyncState      proxyuser.SyncState `json:"sync_state"`
-	LastErrorCode  string              `json:"last_error_code,omitempty"`
-	AvailableBytes int64               `json:"available_bytes"`
-	NearestExpiry  *time.Time          `json:"nearest_expiry,omitempty"`
-	ReferralCount  int64               `json:"referral_count"`
-	CreatedAt      time.Time           `json:"created_at"`
-	UpdatedAt      time.Time           `json:"updated_at"`
+	TelegramUserID    int64                 `json:"telegram_user_id"`
+	TelegramID        int64                 `json:"telegram_id"`
+	ProxyUserID       int64                 `json:"proxy_user_id"`
+	ProxyUsername     string                `json:"proxy_username"`
+	DesiredEnabled    bool                  `json:"enabled"`
+	SyncState         proxyuser.SyncState   `json:"sync_state"`
+	ProvisioningPhase *proxyprovision.Phase `json:"provisioning_phase"`
+	LastErrorCode     string                `json:"last_error_code,omitempty"`
+	AvailableBytes    int64                 `json:"available_bytes"`
+	NearestExpiry     *time.Time            `json:"nearest_expiry,omitempty"`
+	ReferralCount     int64                 `json:"referral_count"`
+	CreatedAt         time.Time             `json:"created_at"`
+	UpdatedAt         time.Time             `json:"updated_at"`
 }
 
 type Page struct {
@@ -76,6 +78,7 @@ SELECT
     pu.username,
     pu.desired_enabled,
     pu.sync_state,
+    pp.phase,
     COALESCE(pu.last_error_code, ''),
     COALESCE((
         SELECT SUM(cb.original_bytes - cb.consumed_bytes)
@@ -104,7 +107,8 @@ SELECT
     tu.created_at,
     tu.updated_at
 FROM telegram_users AS tu
-JOIN proxy_users AS pu ON pu.id = tu.proxy_user_id`
+JOIN proxy_users AS pu ON pu.id = tu.proxy_user_id
+LEFT JOIN proxy_user_provisioning AS pp ON pp.proxy_user_id = pu.id`
 	args := []any{nowUnix, nowUnix, nowUnix, nowUnix}
 	conditions := make([]string, 0, 3)
 	if query.BeforeID > 0 {
@@ -160,6 +164,7 @@ func scanEntry(row scanner) (Entry, error) {
 	var entry Entry
 	var desiredEnabled int64
 	var syncState string
+	var provisioningPhase sql.NullString
 	var nearestExpiry sql.NullInt64
 	var createdAt, updatedAt int64
 	if err := row.Scan(
@@ -169,6 +174,7 @@ func scanEntry(row scanner) (Entry, error) {
 		&entry.ProxyUsername,
 		&desiredEnabled,
 		&syncState,
+		&provisioningPhase,
 		&entry.LastErrorCode,
 		&entry.AvailableBytes,
 		&nearestExpiry,
@@ -185,6 +191,15 @@ func scanEntry(row scanner) (Entry, error) {
 	entry.SyncState = proxyuser.SyncState(syncState)
 	if entry.SyncState != proxyuser.SyncPending && entry.SyncState != proxyuser.SyncSynced && entry.SyncState != proxyuser.SyncError {
 		return Entry{}, fmt.Errorf("stored proxy sync state is invalid")
+	}
+	if provisioningPhase.Valid {
+		phase := proxyprovision.Phase(provisioningPhase.String)
+		switch phase {
+		case proxyprovision.PhasePrepared, proxyprovision.PhaseOwned, proxyprovision.PhaseCollision:
+			entry.ProvisioningPhase = &phase
+		default:
+			return Entry{}, fmt.Errorf("stored proxy provisioning phase is invalid")
+		}
 	}
 	if entry.LastErrorCode != "" && !safeErrorCode(entry.LastErrorCode) {
 		return Entry{}, fmt.Errorf("stored proxy error code is invalid")
