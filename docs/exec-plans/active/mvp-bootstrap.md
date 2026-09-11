@@ -3,7 +3,7 @@
 Status: ACTIVE
 Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
-Latest verified checkpoint: `96af85e5105c0f93d7723a60305ca306c62930b8`
+Latest verified checkpoint: `6732ccbfaf522a44445075bb3d5986d56a0daecd`
 
 ## Recovery contract
 
@@ -69,6 +69,7 @@ Non-negotiable architecture: SQLite WAL/NORMAL is authoritative Control Plane st
 - CP-053 Web Panel read-only established System health surface: `7bcc56493504bdf4c25b5c641aa4a462d9851772`, CI `34577276205` PASS.
 - CP-054 Authenticated read-only Administrator inventory API: `93d05fa059f45387d02c69f5b74a5bad170ccf9d`, CI `34579311752` PASS.
 - CP-055 Web Panel read-only Administrator inventory surface: `96af85e5105c0f93d7723a60305ca306c62930b8`, CI `34581088683` PASS.
+- CP-056 Dashboard read-only established health summary: `6732ccbfaf522a44445075bb3d5986d56a0daecd`, CI `34592339461` PASS.
 
 ### Recent implemented checkpoints
 
@@ -85,6 +86,7 @@ Non-negotiable architecture: SQLite WAL/NORMAL is authoritative Control Plane st
 - CP-053 added authenticated read-only `GET /system` Web Panel over already-established Control Plane, database readiness and single global Telemt health contracts. It shows Panel `online`, DB `ready`/`unavailable`, exact safe global Proxy state plus existing read-only flag, and a minimal Dashboard link. No migrations, mutations, polling, per-Node probing/credentials, Bot-status inference, telemetry, Docker/runtime actions, logs, backup/update/restart/repair/diagnostics semantics, routing or reward behavior were added. Candidate `7bcc5649...`, CI `34577276205` PASS.
 - CP-054 added authenticated read-only `GET /api/admins` backed only by existing authoritative `admins` columns. It returns deterministic ascending-ID inventory with `id`, `username`, literal `role`, `enabled`, `created_at` and `updated_at`, rejects query keys, uses `Cache-Control: no-store`, and never serializes password hashes or admin-session material. No RBAC interpretation/mutation, migration, audit mutation wiring or runtime/network behavior was added. Candidate `93d05fa0...`, CI `34579311752` PASS.
 - CP-055 added authenticated read-only `GET /admins` over the CP-054 administrator inventory read model. It renders the same six non-secret fields in ascending ID order, escapes literal username/role text through `html/template`, shows UTC RFC3339 timestamps and enabled state, has an explicit safe empty template state plus minimal Dashboard/Admin navigation, rejects query keys with the existing `ADMIN_INVENTORY_INVALID` contract, and performs no administrator/session mutation. No RBAC interpretation/mutation, secrets, migration, audit mutation wiring or runtime/network behavior was added. Candidate `96af85e5...`, CI `34581088683` PASS.
+- CP-056 added the established CP-053 Control Plane, database readiness and single global Telemt health meanings to authenticated Dashboard `GET /`. It preserves session/CSRF/logout and every existing navigation link, calls the configured global checker at most once per request, renders nil checker as `not_configured` / `not applicable`, and performs no authoritative-state mutation. No new endpoint, migration, polling, per-Node probing, Bot/Sponsor/traffic/reward metric inference, runtime action, secret handling or Telemt topology was added. Candidate `6732ccbf...`, CI `34592339461` PASS.
 
 ## Supplied source hashes
 
@@ -118,25 +120,9 @@ CP-054 exposes only the existing non-secret administrator inventory from authori
 
 CP-055 adds authenticated read-only `GET /admins` over the CP-054 authoritative administrator inventory. The page preserves ascending-ID order, displays only ID, username, literal stored role, enabled state and UTC RFC3339 created/updated timestamps, escapes stored text through `html/template`, provides an explicit safe empty state and minimal Dashboard/Admin navigation, and rejects query parameters with the established `ADMIN_INVENTORY_INVALID` contract. Candidate CI `34581088683` is fully PASS. No administrator/session mutation, RBAC interpretation, secret exposure, migration, audit mutation wiring or runtime/network behavior was added.
 
-### Stage 11O — Dashboard read-only established health summary — ACTIVE
+### Stage 11O — Dashboard read-only established health summary — COMPLETED AT CP-056
 
-The roadmap Dashboard explicitly calls for Panel status, Proxy status and Database status. CP-053 already established the only safe semantics currently available for those three signals, and production construction already carries the same single global `telemt.Checker` through `NewWithProxyHealth`. This milestone reuses those exact meanings on the authenticated Dashboard; it does not define any additional dashboard metric.
-
-Scope only:
-- extend authenticated `GET /` to render the same established health meanings already used by `/system`: Control Plane `online`, database `ready`/`unavailable` from the existing bounded `PingContext` check, exact safe global Telemt `Health.State`, and the existing global proxy read-only flag only when a checker is configured;
-- preserve `Cache-Control: no-store`, existing session/CSRF/logout behavior and all current navigation;
-- carry the already-existing global `telemt.Checker` through the `Server` instance from `NewWithProxyHealth` so the Dashboard uses the same production checker as `/system`; no new endpoint, credential source, target, probe or topology;
-- nil checker renders proxy `not_configured` and read-only mode `not applicable`, matching CP-053;
-- no polling, auto-refresh, background goroutine, mutation, migration or audit write;
-- do not display or infer Bot status, per-Node health, Sponsor status, active/new-user metrics, traffic, referral/reward counts, last backup, version or update availability because those meanings are not yet established;
-- no Bot/Telegram behavior, per-Node credentials, Sponsor routing, reward semantics, anti-abuse policy, Docker/runtime actions, backup/update/restart/log semantics, version source or new Telemt topology.
-
-Acceptance:
-- authenticated Dashboard shows Panel, Database and global Proxy state plus existing proxy read-only mode using exactly the CP-053 meanings;
-- nil global checker shows `not_configured` / `not applicable`;
-- existing authentication redirect, CSRF logout and Dashboard links remain intact;
-- Dashboard rendering does not mutate authoritative state and makes at most the established synchronous global health check for the request;
-- targeted `internal/httpapi` tests plus format/vet/full Go, installer/Docker prerequisites and Telemt E2E/rerun remain green.
+CP-056 reuses only CP-053's established Control Plane `online`, database `ready`/`unavailable`, global Telemt `Health.State`, and configured global proxy read-only flag on authenticated Dashboard `GET /`. Nil checker remains `not_configured` / `not applicable`; session/CSRF/logout and all existing navigation remain intact; rendering is read-only and performs at most one synchronous global health check. Candidate CI `34592339461` is fully PASS across format/vet/full Go plus installer/Docker/Telemt E2E/rerun. No additional dashboard metric or blocked product/runtime semantic was introduced.
 
 ### Stage 11H — Bot Content runtime delivery wiring — BLOCKED ON PRODUCT SEMANTICS
 
@@ -192,10 +178,13 @@ Roadmap requires configurable daily/weekly caps, cooldowns, blacklist and suspic
 - Stage 11N scope docs `b0963403...` CI `34580148444` PASS across Format, Vet, full Go tests, installer syntax/unit tests, Docker prerequisites and Telemt E2E/rerun.
 - CP-055 candidate `96af85e5...` CI `34581088683` PASS across Format, Vet, full Go tests, installer syntax/unit tests, Docker prerequisites and Telemt E2E/rerun.
 - CP-055 promotion docs `e5f95609...` CI `34581514054` PASS across Format, Vet, full Go tests, installer syntax/unit tests, Docker prerequisites and Telemt E2E/rerun.
+- Stage 11O scope docs `8aaf5aa8...` CI `34582484532` PASS across Format, Vet, full Go tests, installer syntax/unit tests, Docker prerequisites and Telemt E2E/rerun.
+- CP-056 candidate `6732ccbf...` CI `34592339461` PASS across Format, Vet, full Go tests, installer syntax/unit tests, Docker prerequisites and Telemt E2E/rerun.
 - CP-053 promotion docs `336f6245...` CI `34577610899`: first installer attempt failed before application E2E because Docker Hub returned `502 Bad Gateway` for `golang:1.27.1-bookworm` and an image resolver returned `EOF`; targeted installer rerun job `103195352286` then PASSed installer syntax/unit, Docker prerequisites and Telemt E2E/rerun with no code change.
 - Local clone for CP-050/CP-052 targeted tests remained unavailable because the container could not resolve github.com; CP-052 staged Go files were `gofmt`-clean locally, and full GitHub CI supplied authoritative format/vet/test plus installer/Docker/Telemt verification.
 - One initial 11F `create_tree` connector call was tool-blocked before any branch move; retry succeeded with the same three staged blobs. No repository state was changed by the blocked call.
+- One initial Stage 11O large `create_blob` staging call was tool-blocked before object creation; retrying the exact gofmt-clean file as base64 produced the expected blob SHA. No branch state was changed by the blocked call.
 
 ## Current next action
 
-Implement Stage 11O exactly as scoped: reuse only the CP-053 Panel/Database/global Proxy health meanings on the authenticated Dashboard, self-review the diff, run targeted/full validation, and checkpoint only after the complete CI gate passes. Preserve every listed blocker and do not broaden into new dashboard metrics, Administrator mutation/RBAC enforcement semantics, Bot runtime composition, per-Node credential/health semantics, referral reward issuance, anti-abuse policy, Docker/runtime actions, backup/restore, update/restart, logs, version-source semantics, new Telemt topology, secret handling changes or audit mutation behavior.
+After CP-056 promotion/docs CI passes, inspect the remaining roadmap against current repository contracts and select the next smallest independent milestone whose semantics are already established. Preserve every listed blocker and do not invent Dashboard metrics, Administrator mutation/RBAC enforcement, Bot runtime composition, per-Node credential/health semantics, referral reward issuance, anti-abuse policy, backup/restore, update/restart, logs, version-source semantics, new Telemt topology, secret handling changes or audit mutation behavior.
