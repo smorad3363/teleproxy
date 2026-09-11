@@ -5,8 +5,8 @@ Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
 Latest verified code checkpoint: `e20f3cb2c17489cbf911b3bdd3130bf420978d4d` (CP-064)
 Most recent verified code CI: `34624305188` PASS
-Current branch checkpoint: `e20f3cb2c17489cbf911b3bdd3130bf420978d4d` (CP-064 candidate)
-Current branch CI: `34624305188` PASS
+Current branch checkpoint: `b055fedf4638f3b401ad5e3d9fbc00f48d692cf7` (CP-064 promotion docs)
+Current branch CI: `34624780650` PASS
 
 Historical execution detail through CP-059 is preserved byte-for-byte at
 `docs/exec-plans/archive/mvp-bootstrap-through-cp059.md`, using the prior active-plan
@@ -82,6 +82,8 @@ was published.
   `e20f3cb2c17489cbf911b3bdd3130bf420978d4d`, CI `34624305188` PASS across Format,
   Vet, full Go tests, ShellCheck, installer syntax/unit tests, Docker prerequisites,
   and Telemt E2E/rerun.
+- CP-064 promotion docs:
+  `b055fedf4638f3b401ad5e3d9fbc00f48d692cf7`, CI `34624780650` PASS.
 
 ## Explicit blockers
 
@@ -216,9 +218,37 @@ Candidate chain and CI evidence:
   remaining source-resolution `SC1091` findings.
 - `e20f3cb2c17489cbf911b3bdd3130bf420978d4d`, CI `34624305188` PASS all gates.
 
+## Stage 12C — CI Docker Compose config validation gate — ACTIVE
+
+The roadmap explicitly recommends `docker compose config validation` in CI. The current
+workflow only verifies Docker/Compose binaries and then runs the full installer E2E.
+This milestone adds one explicit, fast validation gate for the repository's existing
+`compose.yaml` before the E2E install.
+
+Scope only:
+- add one `Compose config validation` step to the existing `installer` job after
+  `Docker prerequisites` and before the installer/Telemt E2E step;
+- run `docker compose config --quiet` against the existing root `compose.yaml`;
+- provide only the non-secret interpolation values already required by that file:
+  panel port plus data/secrets/proxy-data/config filesystem paths;
+- do not create or read any token/password/secret material and do not start containers;
+- preserve ShellCheck, Bash syntax/unit tests, Docker prerequisites and the full
+  Telemt E2E/rerun gate unchanged;
+- no Compose topology, image, Dockerfile, installer, runtime, CLI, endpoint, migration,
+  Bot, referral, Sponsor, Node, secret-handling, backup/update/rollback/watchdog or
+  lifecycle semantics change.
+
+Acceptance:
+- CI has an explicit Compose config validation step in the existing installer job;
+- validation succeeds using only non-secret interpolation values;
+- the step performs no build, pull, container start, mutation or network-dependent
+  product action;
+- every existing CI gate remains present and full CI passes.
+
 ## Current next action
 
-Promote CP-064 documentation only and require full CI PASS. Then inspect the roadmap
-and current repository contracts for the next semantics-established bounded milestone.
-Preserve every explicit blocker, lifecycle separation, and Credit Buckets as
-authoritative quota/reward state; do not invent missing product/runtime semantics.
+Publish this Stage 12C scope as a plan-only commit and require full CI PASS. Then add
+only the explicit Compose config validation gate above, self-review the one-file diff,
+and require the complete CI gate before promoting the next checkpoint. Preserve every
+explicit blocker, lifecycle separation, and Credit Buckets as authoritative
+quota/reward state; do not invent missing product/runtime semantics.
