@@ -67,7 +67,7 @@ if [[ -f "$STATE_FILE" ]]; then
   [[ -n "$persisted_bind" ]] && PANEL_BIND=$persisted_bind
   [[ -n "$persisted_image" ]] && CONTROL_IMAGE=$persisted_image
   [[ -n "$persisted_proxy_port" ]] && PROXY_PORT=$persisted_proxy_port
-  [[ -n "$persisted_proxy_bind" ]] && PROXY_BIND=$persisted_proxy_bind
+  [[ -n "$persisted_proxy_bind" ]] && PROXY_BIND=$persisted_bind
   [[ -n "$persisted_telemt_image" ]] && TELEMT_IMAGE=$persisted_telemt_image
   [[ -n "$persisted_tls_domain" ]] && TELEMT_TLS_DOMAIN=$persisted_tls_domain
   [[ -z "$REQUESTED_SOURCE_REF" && -n "$persisted_source_ref" ]] && SOURCE_REF=$persisted_source_ref
@@ -233,6 +233,30 @@ if [[ "$control_ready" != "1" ]]; then
   echo "control plane did not become ready" >&2
   compose ps >&2 || true
   compose logs --tail=80 control >&2 || true
+  exit 1
+fi
+
+control_healthy=0
+control_health=""
+control_state=""
+control_id=""
+for _ in $(seq 1 60); do
+  control_id=$(compose ps -q control 2>/dev/null || true)
+  if [[ -n "$control_id" ]]; then
+    control_health=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}missing{{end}}' "$control_id" 2>/dev/null || true)
+    if [[ "$control_health" == "healthy" ]]; then
+      control_healthy=1
+      break
+    fi
+  fi
+  sleep 1
+done
+if [[ "$control_healthy" != "1" ]]; then
+  if [[ -n "$control_id" ]]; then
+    control_state=$(docker inspect -f '{{.State.Status}}' "$control_id" 2>/dev/null || true)
+  fi
+  echo "Control container did not become healthy: container=${control_state:-missing} health=${control_health:-missing}" >&2
+  compose ps >&2 || true
   exit 1
 fi
 
