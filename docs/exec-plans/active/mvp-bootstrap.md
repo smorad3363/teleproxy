@@ -3,10 +3,10 @@
 Status: ACTIVE
 Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
-Latest verified code checkpoint: `e0192fecaa9031af47ba508b0f94178654729dae` (CP-065)
-Most recent verified code CI: `34629239550` PASS
-Current branch checkpoint: `14c5f5504d0b729ca4f8df77d68dbb75dc160441` (CP-065 promotion docs)
-Current branch CI: `34629611234` PASS
+Latest verified code checkpoint: `fa82c2d1c2646eb727b09f4415c1e3537af448bc` (CP-066)
+Most recent verified code CI: `34644370094` PASS
+Current branch checkpoint: `fa82c2d1c2646eb727b09f4415c1e3537af448bc` (CP-066 candidate)
+Current branch CI: `34644370094` PASS
 
 Historical execution detail through CP-059 is preserved byte-for-byte at
 `docs/exec-plans/archive/mvp-bootstrap-through-cp059.md`, using the prior active-plan
@@ -92,6 +92,12 @@ was published.
   explicit Compose config validation, and Telemt E2E/rerun.
 - CP-065 promotion docs:
   `14c5f5504d0b729ca4f8df77d68dbb75dc160441`, CI `34629611234` PASS.
+- Stage 12D scope docs:
+  `099e6580d5977476b78736ccfa4356aa12258fe3`, CI `34644118607` PASS.
+- CP-066 CI Docker build gate:
+  `fa82c2d1c2646eb727b09f4415c1e3537af448bc`, CI `34644370094` PASS across Format,
+  Vet, full Go tests, ShellCheck, installer syntax/unit tests, Docker prerequisites,
+  explicit Docker build, Compose config validation, and Telemt E2E/rerun.
 
 ## Explicit blockers
 
@@ -247,35 +253,31 @@ Stage 12C scope docs `5a4469dff041722a4fbc6475f07a25fc787294ac`
 passed CI `34628954182`. Candidate `e0192fecaa9031af47ba508b0f94178654729dae`
 passed CI `34629239550` across all gates including the new Compose validation step.
 
-## Stage 12D — CI Docker build gate — SCOPED
+## Stage 12D — CI Docker build gate — COMPLETED AT CP-066
 
-The roadmap explicitly requires a Docker build CI check. The repository already has
-bounded build contracts for both existing Compose services: root `Dockerfile` for the
-Control Plane and `docker/telemt/Dockerfile` for Telemt, both referenced by the existing
-root `compose.yaml`. Installer E2E already reaches these builds indirectly through
-`docker compose up -d --build`; Stage 12D adds only an earlier explicit buildability
-gate so Dockerfile/build-context failures are attributed before runtime E2E.
+CP-066 adds one explicit `Docker build` step to the existing `installer` CI job after
+Docker prerequisites and before Compose config validation. It reuses only the same
+non-secret required Compose interpolation values and runs `docker compose build`, so it
+builds the two already-defined `control` and `telemt` service images without pushing or
+starting containers.
 
-Intended code diff is exactly:
+The final scoped code diff contains exactly:
 - `.github/workflows/ci.yml`
 
-The implementation will add one `Docker build` step to the existing `installer` job
-after `Docker prerequisites` and before `Compose config validation`. It will reuse the
-same non-secret required Compose interpolation values and run `docker compose build`,
-thereby building only the already-defined `control` and `telemt` services. It will not
-push images, start containers, alter tags, change Dockerfiles or Compose topology,
-introduce secrets, modify installer/runtime behavior, add endpoints/migrations, or
-change Bot/referral/Sponsor/Node/Telemt product semantics or lifecycle boundaries.
+No image tag, Dockerfile, Compose topology, secret, installer/runtime behavior,
+endpoint, migration, Bot/referral/Sponsor/Node/Telemt product semantics, or lifecycle
+boundary changed. The pre-existing Compose validation and installer/Telemt E2E/rerun
+remain after the explicit build gate.
 
-Acceptance requires the scope-doc CI to pass before code change, then the candidate CI
-to pass Format, Vet, full Go tests, ShellCheck, installer syntax/unit tests, Docker
-prerequisites, explicit Docker build, Compose config validation, and Telemt E2E/rerun.
+Stage 12D scope docs `099e6580d5977476b78736ccfa4356aa12258fe3`
+passed CI `34644118607`. Candidate `fa82c2d1c2646eb727b09f4415c1e3537af448bc`
+passed CI `34644370094` across Format, Vet, full Go tests, ShellCheck, installer
+syntax/unit tests, Docker prerequisites, explicit Docker build, Compose config
+validation, and Telemt E2E/rerun.
 
 ## Current next action
 
-Require PASS for the Stage 12D scope-doc CI. Then implement exactly the scoped
-`.github/workflows/ci.yml` Docker build gate, self-review the one-file diff, require full
-candidate CI PASS, promote the checkpoint in this plan, require promotion CI PASS, and
-only then select the next independent semantics-established milestone. Preserve every
-explicit blocker, lifecycle separation, and Credit Buckets as authoritative quota/reward
-state; do not invent missing product/runtime semantics.
+Promote CP-066 documentation only and require full CI PASS. Then inspect the roadmap
+and current repository contracts for the next semantics-established bounded milestone.
+Preserve every explicit blocker, lifecycle separation, and Credit Buckets as
+authoritative quota/reward state; do not invent missing product/runtime semantics.
