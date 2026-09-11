@@ -3,7 +3,7 @@
 Status: ACTIVE
 Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
-Latest verified checkpoint: `4a52a8864f1f348c5020fbfff7d76b3dbeaa59e8`
+Latest verified checkpoint: `89c147f0a34ccc62f8014c030beef2a443c9cc15`
 
 ## Recovery contract
 
@@ -62,6 +62,7 @@ Non-negotiable architecture: SQLite WAL/NORMAL is authoritative Control Plane st
 - CP-048 Authenticated Bot Content Admin API: `10dbde635dc8909e9bcbbe633ff659fc9934480e`, CI `34544396136` PASS.
 - CP-049 Web Panel Bot Content management surface: `8588193e98d027c16f45b3f77149acf18c65cb9f`, CI `34544809255` PASS.
 - CP-050 Audit Log persistence primitives: `4a52a8864f1f348c5020fbfff7d76b3dbeaa59e8`, CI `34567969934` PASS.
+- CP-051 Authenticated read-only Audit Log Admin API: `89c147f0a34ccc62f8014c030beef2a443c9cc15`, CI `34573865558` PASS.
 
 ### Recent implemented checkpoints
 
@@ -73,6 +74,7 @@ Non-negotiable architecture: SQLite WAL/NORMAL is authoritative Control Plane st
 - CP-048 added authenticated `GET /api/bot-content`, CSRF-protected per-slot `PUT` and `DELETE`, bounded strict JSON, typed Problems, deterministic configured-only list and empty `[]`. No Bot runtime wiring or network calls. Candidate `10dbde63...`, CI `34544396136` PASS.
 - CP-049 added authenticated `/bot-content` Web Panel showing all seven fixed slots, explicit not-configured state, escaped literal text and same-origin CSRF PUT/DELETE wiring over CP-048. No fallback copy or Bot runtime wiring. Candidate `8588193e...`, CI `34544809255` PASS.
 - CP-050 added additive migration `014_audit_log.sql` plus `internal/auditlog` append/get/list primitives for roadmap actor/action/target/before/after/timestamp/request-ID fields. The table is database-level append-only via update/delete rejection triggers; required identifiers and snapshots are bounded/UTF-8 validated; snapshots remain opaque caller-owned text, no existing mutation path is wired, and sensitive state is never implicitly copied. Migration compatibility tests now expect 14. Candidate `4a52a886...`, CI `34567969934` PASS.
+- CP-051 added authenticated read-only `GET /api/audit-log` with bounded `before_id`/`limit` pagination, newest-first SQLite reads, exact stored audit fields, explicit empty `[]`, `Cache-Control: no-store`, stable `AUDIT_LOG_INVALID` Problems, and no mutation endpoint or automatic mutation wiring. Candidate `89c147f0...`, CI `34573865558` PASS.
 
 ## Supplied source hashes
 
@@ -90,25 +92,24 @@ Telemt `3.5.7`, upstream commit `4ca7418442478cd92f9e861c21977a81b249efc8`.
 
 ## Active stage
 
-### Stage 11J — Authenticated read-only Audit Log Admin API — ACTIVE
+### Stage 11K — Web Panel read-only Audit Log surface — ACTIVE
 
-Roadmap Audit Log fields are now persisted by CP-050. This milestone exposes only authenticated read access to those entries; it does not add an audit write endpoint and does not wire existing mutations to audit logging.
+CP-051 exposes the roadmap Audit Log fields through an authenticated read-only API. This milestone adds only the corresponding authenticated Web Panel surface; it does not create audit events or change mutation behavior.
 
 Scope only:
-- add authenticated `GET /api/audit-log` using existing Admin API session authentication;
-- accept only bounded `before_id` / `limit` pagination parameters with stable typed Problem responses;
-- default to a bounded page size and cap requests at 100 entries;
-- list newest entries first from authoritative SQLite and preserve stored actor/action/target/before/after/request-ID/timestamp exactly;
-- return an explicit empty JSON array when no rows exist and `Cache-Control: no-store` on success;
-- no CSRF requirement for this read-only GET; no POST/PUT/PATCH/DELETE audit endpoint;
-- no migration, mutation wiring, automatic snapshot serialization/redaction, Telegram/Telemt call, Node/Sponsor routing, reward issuance or installer/compose change.
+- add authenticated `GET /audit-log` Web Panel route using the existing session/page-auth pattern;
+- render newest-first actor, action, target, request ID and timestamp plus optional before/after snapshots from authoritative SQLite;
+- render snapshots as escaped literal text, preserving absence explicitly and never interpreting snapshot contents as HTML;
+- provide bounded read-only pagination consistent with CP-051; no client-side write operation or audit mutation endpoint;
+- add a minimal Dashboard navigation link for Audit Log;
+- no migration, mutation logging, automatic snapshot serialization/redaction, Telegram/Telemt call, Node/Sponsor routing, reward issuance, secret handling change or installer/compose change.
 
 Acceptance:
-- unauthenticated GET fails with existing `AUTH_REQUIRED` Problem;
-- authorized GET returns deterministic newest-first entries and bounded cursor pagination;
-- invalid/duplicate/unknown pagination parameters fail with typed `AUDIT_LOG_INVALID` Problem and do not mutate state;
-- empty history serializes as `[]`, never `null`;
-- GET does not alter `audit_log` or other authoritative tables;
+- unauthenticated page follows the existing authenticated Web Panel behavior;
+- empty state is explicit and safe;
+- actor/action/target/request ID/timestamp and optional before/after snapshots are rendered faithfully with HTML escaping;
+- pagination remains bounded and deterministic newest-first;
+- page load does not alter `audit_log` or other authoritative state;
 - format/vet/test and Docker/Telemt E2E remain green.
 
 ### Stage 11H — Bot Content runtime delivery wiring — BLOCKED ON PRODUCT SEMANTICS
@@ -150,9 +151,11 @@ Roadmap requires configurable daily/weekly caps, cooldowns, blacklist and suspic
 - CP-049 candidate `8588193e...` CI `34544809255` PASS across full Go and installer/Docker/Telemt E2E validation.
 - CP-049 promotion docs `d2cef37c...` CI `34567507147` PASS.
 - CP-050 candidate `4a52a886...` CI `34567969934` PASS across Format, Vet, full Go tests, installer syntax/unit tests, Docker prerequisites and Telemt E2E/rerun.
+- CP-050 promotion docs `e2927d63...` CI `34568207035` PASS.
+- CP-051 candidate `89c147f0...` CI `34573865558` PASS across Format, Vet, full Go tests, installer syntax/unit tests, Docker prerequisites and Telemt E2E/rerun.
 - Local clone for CP-050 targeted tests was unavailable because the container could not resolve github.com; staged Go files were gofmt-clean and production `store.go` compile-checked locally before atomic publication, then full GitHub CI supplied the authoritative verification.
 - One initial 11F `create_tree` connector call was tool-blocked before any branch move; retry succeeded with the same three staged blobs. No repository state was changed by the blocked call.
 
 ## Current next action
 
-Verify the CP-050 promotion docs-head CI. Then implement only Stage 11J authenticated read-only Audit Log Admin API. Keep audit write endpoints, automatic mutation logging/snapshot serialization/redaction, Bot runtime delivery/wiring, fallback/default copy, templates/placeholders/formatting, button labels/emoji, secrets, reward issuance, unresolved anti-abuse policy, Node runtime probing, multi-Telemt routing and installer/compose behavior unchanged.
+Verify the CP-051 promotion docs-head CI. Then implement only Stage 11K Web Panel read-only Audit Log surface. Keep audit write endpoints, automatic mutation logging/snapshot serialization/redaction, Bot runtime delivery/wiring, fallback/default copy, templates/placeholders/formatting, button labels/emoji, secrets, reward issuance, unresolved anti-abuse policy, Node runtime probing, multi-Telemt routing and installer/compose behavior unchanged.
