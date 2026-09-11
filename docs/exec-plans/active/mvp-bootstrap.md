@@ -79,7 +79,7 @@ Non-negotiable architecture: SQLite WAL/NORMAL is authoritative Control Plane st
 - CP-046 added `/settings` Start Gift Web Panel with exact int64 browser handling; candidate `198100a0...`, CI `34543281630` PASS.
 - CP-047 added migration `013_bot_content.sql` plus literal-text Bot Content persistence for seven fixed roadmap slots. Initial `f9b5ad04...` CI failed only because legacy migration-count tests expected 12; forward repair ended at `88465ade...`, CI `34543883064` PASS.
 - CP-048 added authenticated `GET /api/bot-content`, CSRF-protected per-slot `PUT` and `DELETE`, bounded strict JSON, typed Problems, deterministic configured-only list and empty `[]`. No Bot runtime wiring or network calls. Candidate `10dbde63...`, CI `34544396136` PASS.
-- CP-049 added authenticated `/bot-content` Web Panel showing all seven fixed slots, explicit not-configured state, escaped literal text and same-origin CSRF PUT/DELETE wiring over CP-048. No fallback copy or Bot runtime wiring. Candidate `8588193e...`, CI `34544809255` PASS.
+- CP-049 added `/bot-content` Web Panel showing all seven fixed slots, explicit not-configured state, escaped literal text and same-origin CSRF PUT/DELETE wiring over CP-048. No fallback copy or Bot runtime wiring. Candidate `8588193e...`, CI `34544809255` PASS.
 - CP-050 added additive migration `014_audit_log.sql` plus `internal/auditlog` append/get/list primitives for roadmap actor/action/target/before/after/timestamp/request-ID fields. The table is database-level append-only via update/delete rejection triggers; required identifiers and snapshots are bounded/UTF-8 validated; snapshots remain opaque caller-owned text, no existing mutation path is wired, and sensitive state is never implicitly copied. Migration compatibility tests now expect 14. Candidate `4a52a886...`, CI `34567969934` PASS.
 - CP-051 added authenticated read-only `GET /api/audit-log` with bounded `before_id`/`limit` pagination, newest-first SQLite reads, exact stored audit fields, explicit empty `[]`, `Cache-Control: no-store`, stable `AUDIT_LOG_INVALID` Problems, and no mutation endpoint or automatic mutation wiring. Candidate `89c147f0...`, CI `34573865558` PASS.
 - CP-052 added authenticated read-only `GET /audit-log` Web Panel using the existing page-session pattern, exact newest-first CP-051 pagination, escaped literal before/after snapshots with explicit absence, actor/action/target/request ID/RFC3339 timestamp display, explicit safe empty state and a minimal Dashboard link. No audit writes, migrations, mutation logging/redaction semantics, Telegram/Telemt changes, routing changes or reward semantics were added. Candidate `44894ff9...`, CI `34576150059` PASS.
@@ -180,11 +180,33 @@ Roadmap requires configurable daily/weekly caps, cooldowns, blacklist and suspic
 - CP-055 promotion docs `e5f95609...` CI `34581514054` PASS across Format, Vet, full Go tests, installer syntax/unit tests, Docker prerequisites and Telemt E2E/rerun.
 - Stage 11O scope docs `8aaf5aa8...` CI `34582484532` PASS across Format, Vet, full Go tests, installer syntax/unit tests, Docker prerequisites and Telemt E2E/rerun.
 - CP-056 candidate `6732ccbf...` CI `34592339461` PASS across Format, Vet, full Go tests, installer syntax/unit tests, Docker prerequisites and Telemt E2E/rerun.
+- CP-056 promotion docs `5ff127f8...` CI `34592958185` PASS across Format, Vet, full Go tests, installer syntax/unit tests, Docker prerequisites and Telemt E2E/rerun.
 - CP-053 promotion docs `336f6245...` CI `34577610899`: first installer attempt failed before application E2E because Docker Hub returned `502 Bad Gateway` for `golang:1.27.1-bookworm` and an image resolver returned `EOF`; targeted installer rerun job `103195352286` then PASSed installer syntax/unit, Docker prerequisites and Telemt E2E/rerun with no code change.
 - Local clone for CP-050/CP-052 targeted tests remained unavailable because the container could not resolve github.com; CP-052 staged Go files were `gofmt`-clean locally, and full GitHub CI supplied authoritative format/vet/test plus installer/Docker/Telemt verification.
 - One initial 11F `create_tree` connector call was tool-blocked before any branch move; retry succeeded with the same three staged blobs. No repository state was changed by the blocked call.
 - One initial Stage 11O large `create_blob` staging call was tool-blocked before object creation; retrying the exact gofmt-clean file as base64 produced the expected blob SHA. No branch state was changed by the blocked call.
 
+### Stage 11P — Web Panel established proxy lifecycle actions — ACTIVE
+
+The roadmap Users surface explicitly calls for Enable / Disable and Generate new secret. Those mutation semantics already exist in the authenticated CP-009 proxy lifecycle API, including CSRF enforcement, authoritative desired-state persistence, fail-closed quota reconciliation, Telemt convergence/error codes, and reveal-once secret responses. CP-044 already exposes the authoritative proxy username, desired-enabled state and sync state on `/users`. This milestone adds only browser controls over those existing contracts.
+
+Scope only:
+- extend authenticated `/users` rows that already have a non-empty authoritative proxy username with Enable/Disable and Rotate secret controls; do not infer or create a proxy username for rows where none exists;
+- use the existing same-origin `POST /api/proxy/users/{username}/enable`, `/disable`, and `/rotate-secret` endpoints with the existing session-derived `X-CSRF-Token`; do not duplicate lifecycle logic or call Telemt directly from the page handler;
+- preserve the existing user-inventory pagination/query semantics and `Cache-Control: no-store`;
+- after enable/disable success, refresh the current inventory page so desired/sync state is re-read from authoritative SQLite;
+- after rotate-secret success, reveal the returned secret only in the current browser page with an explicit one-time warning; never persist, pre-render, log, audit, cache, or silently copy plaintext secret material;
+- surface existing typed API failures as bounded operator-visible status text without inventing retry, rollback, reconciliation or audit semantics;
+- no new endpoint, migration, proxy-account creation UI, traffic/time/credit mutation, ban/unban, secret-status inference, Node/Sponsor assignment, referral action, audit write, Telegram/Bot behavior, per-Node credentials, Sponsor routing, reward semantics, Docker/runtime action or Telemt topology change.
+
+Acceptance:
+- authenticated `/users` keeps its current inventory and navigation while showing only the already-established lifecycle controls for rows with proxy usernames;
+- the opposite desired-state action is available deterministically from the current `DesiredEnabled` value and rotate-secret is separately explicit;
+- mutation requests send the existing CSRF header and remain same-origin; unauthenticated behavior and API CSRF rejection remain unchanged;
+- successful enable/disable re-reads authoritative state; successful secret rotation reveals plaintext only from that response and the initial page contains no secret;
+- rows without a proxy username render a safe unavailable action state and issue no guessed lifecycle target;
+- targeted `internal/httpapi` tests plus format/vet/full Go, installer/Docker prerequisites and Telemt E2E/rerun remain green.
+
 ## Current next action
 
-After CP-056 promotion/docs CI passes, inspect the remaining roadmap against current repository contracts and select the next smallest independent milestone whose semantics are already established. Preserve every listed blocker and do not invent Dashboard metrics, Administrator mutation/RBAC enforcement, Bot runtime composition, per-Node credential/health semantics, referral reward issuance, anti-abuse policy, backup/restore, update/restart, logs, version-source semantics, new Telemt topology, secret handling changes or audit mutation behavior.
+Implement Stage 11P exactly as scoped, self-review the complete diff, run targeted/full validation, and checkpoint only after the complete CI gate passes. Preserve every listed blocker and do not broaden into proxy-account creation, traffic/time/credit mutation, ban semantics, Node/Sponsor assignment, audit mutation wiring, Dashboard metrics, Administrator RBAC enforcement, Bot runtime composition, per-Node credential/health semantics, referral reward issuance, anti-abuse policy, backup/restore, update/restart, logs, version-source semantics, new Telemt topology or secret persistence.
