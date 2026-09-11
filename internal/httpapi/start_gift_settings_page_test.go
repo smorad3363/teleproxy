@@ -66,13 +66,59 @@ func TestStartGiftSettingsPageRendersExactInt64AndAPIWiringWithoutMutation(t *te
 	}
 }
 
+func TestSettingsPageRendersReferralRewardExactInt64AndExistingAPIWiringWithoutMutation(t *testing.T) {
+	ctx := context.Background()
+	db := testDB(t)
+	server, cookie, csrf := authenticatedReferralSettingsAPI(t, db)
+	const rewardBytes = int64(9_007_199_254_740_993)
+	const expiryDays = int64(9_007_199_254_740_995)
+	if err := settings.SetReferralReward(ctx, db, rewardBytes, expiryDays); err != nil {
+		t.Fatal(err)
+	}
+	beforeSettings := countHTTPRows(t, db, "settings")
+	beforeCredits := countHTTPRows(t, db, "credit_buckets")
+
+	response := perform(server.Handler(), http.MethodGet, "/settings", nil, cookie)
+	if response.Code != http.StatusOK {
+		t.Fatalf("settings page = %d %s", response.Code, response.Body.String())
+	}
+	body := response.Body.String()
+	for _, want := range []string{
+		`content="` + csrf + `"`,
+		`name="reward_bytes" type="text" inputmode="numeric" pattern="[1-9][0-9]*" value="9007199254740993"`,
+		`name="reward_expiry_days" type="text" inputmode="numeric" pattern="[1-9][0-9]*" value="9007199254740995"`,
+		`fetch('/api/referral/reward-settings'`,
+		`'X-CSRF-Token': csrf`,
+		`body: '{"bytes":' + rewardBytes + ',"expiry_days":' + expiryDays + '}'`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("settings referral reward surface missing %q: %s", want, body)
+		}
+	}
+	for _, forbidden := range []string{
+		"Number(rewardBytes)", "parseInt(rewardBytes", "parseFloat(rewardBytes",
+		"Number(expiryDays)", "parseInt(expiryDays", "parseFloat(expiryDays",
+	} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("settings referral reward surface uses lossy numeric conversion %q: %s", forbidden, body)
+		}
+	}
+	if countHTTPRows(t, db, "settings") != beforeSettings || countHTTPRows(t, db, "credit_buckets") != beforeCredits {
+		t.Fatal("settings referral reward rendering mutated state")
+	}
+}
+
 func TestStartGiftSettingsPageDefaultAndDashboardLink(t *testing.T) {
 	db := testDB(t)
 	server, cookie, _ := authenticatedReferralSettingsAPI(t, db)
 
 	settingsPage := perform(server.Handler(), http.MethodGet, "/settings", nil, cookie)
-	if settingsPage.Code != http.StatusOK || !strings.Contains(settingsPage.Body.String(), `value="100000000"`) {
-		t.Fatalf("default settings page = %d %s", settingsPage.Code, settingsPage.Body.String())
+	body := settingsPage.Body.String()
+	if settingsPage.Code != http.StatusOK ||
+		!strings.Contains(body, `value="100000000"`) ||
+		!strings.Contains(body, `name="reward_bytes" type="text" inputmode="numeric" pattern="[1-9][0-9]*" value="2000000000"`) ||
+		!strings.Contains(body, `name="reward_expiry_days" type="text" inputmode="numeric" pattern="[1-9][0-9]*" value="14"`) {
+		t.Fatalf("default settings page = %d %s", settingsPage.Code, body)
 	}
 	dashboard := perform(server.Handler(), http.MethodGet, "/", nil, cookie)
 	if dashboard.Code != http.StatusOK || !strings.Contains(dashboard.Body.String(), `href="/settings"`) {

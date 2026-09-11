@@ -11,6 +11,7 @@ type startGiftPageData struct {
 	Username string
 	CSRF     string
 	Bytes    int64
+	Reward   settings.ReferralRewardSettings
 }
 
 var startGiftPageTemplate = template.Must(template.New("settings").Parse(`<!doctype html>
@@ -21,12 +22,13 @@ var startGiftPageTemplate = template.Must(template.New("settings").Parse(`<!doct
 <meta name="csrf-token" content="{{.CSRF}}">
 <title>Teleproxy Settings</title>
 <style>
-:root{font-family:Inter,ui-sans-serif,system-ui,sans-serif;color-scheme:dark;background:#0b1020;color:#eef2ff}*{box-sizing:border-box}body{margin:0;background:#0b1020;color:#eef2ff}header{display:flex;gap:18px;justify-content:space-between;align-items:center;padding:18px 5vw;border-bottom:1px solid #24304c;background:#10172a}header nav{display:flex;gap:14px;align-items:center;flex-wrap:wrap}a{color:#c9d7ff}main{padding:30px 5vw 56px}.panel{max-width:760px;border:1px solid #26324f;border-radius:16px;background:#11182a;padding:22px}label{display:grid;gap:6px;font-size:13px;color:#cbd5e1}input{width:100%;border:1px solid #34415f;border-radius:9px;padding:10px;background:#0c1323;color:#fff;font:inherit}.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}button{border:1px solid #52617d;border-radius:9px;padding:9px 12px;background:#dbe6ff;color:#111827;font-weight:700;cursor:pointer}.muted{color:#9aa8c4}.status{min-height:1.4em;color:#fda4af;margin:8px 0 0}@media(max-width:600px){header{align-items:flex-start;flex-direction:column}}
+:root{font-family:Inter,ui-sans-serif,system-ui,sans-serif;color-scheme:dark;background:#0b1020;color:#eef2ff}*{box-sizing:border-box}body{margin:0;background:#0b1020;color:#eef2ff}header{display:flex;gap:18px;justify-content:space-between;align-items:center;padding:18px 5vw;border-bottom:1px solid #24304c;background:#10172a}header nav{display:flex;gap:14px;align-items:center;flex-wrap:wrap}a{color:#c9d7ff}main{padding:30px 5vw 56px;display:grid;gap:24px}.panel{max-width:760px;border:1px solid #26324f;border-radius:16px;background:#11182a;padding:22px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}label{display:grid;gap:6px;font-size:13px;color:#cbd5e1}input{width:100%;border:1px solid #34415f;border-radius:9px;padding:10px;background:#0c1323;color:#fff;font:inherit}.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}button{border:1px solid #52617d;border-radius:9px;padding:9px 12px;background:#dbe6ff;color:#111827;font-weight:700;cursor:pointer}.muted{color:#9aa8c4}.status{min-height:1.4em;color:#fda4af;margin:8px 0 0}@media(max-width:600px){header{align-items:flex-start;flex-direction:column}}
 </style>
 </head>
 <body>
 <header><nav><strong>Teleproxy</strong><a href="/">Dashboard</a><a href="/users">Users</a><a href="/sponsors">Sponsors</a><a href="/nodes">Proxy Nodes</a><a href="/referrals">Referrals</a><a href="/forced-join">Forced Join</a><a href="/settings" aria-current="page">Settings</a></nav><span class="muted">Signed in as {{.Username}}</span></header>
-<main><section class="panel">
+<main>
+<section class="panel">
 <h1>Settings</h1>
 <h2>Start gift</h2>
 <p class="muted">This amount applies only when a user's exactly-once start gift has not yet been created. Existing Credit Buckets are not rewritten.</p>
@@ -35,20 +37,33 @@ var startGiftPageTemplate = template.Must(template.New("settings").Parse(`<!doct
 <div class="actions"><button type="submit">Save start gift</button></div>
 <p class="status" role="status" aria-live="polite"></p>
 </form>
-</section></main>
+</section>
+<section class="panel">
+<h2>Referral reward</h2>
+<p class="muted">Configure the established referral reward amount and expiry only. Reward recipient selection and issuance remain outside this settings surface.</p>
+<form id="referral-reward-settings">
+<div class="grid">
+<label>Reward bytes<input name="reward_bytes" type="text" inputmode="numeric" pattern="[1-9][0-9]*" value="{{.Reward.Bytes}}" required></label>
+<label>Expiry days<input name="reward_expiry_days" type="text" inputmode="numeric" pattern="[1-9][0-9]*" value="{{.Reward.ExpiryDays}}" required></label>
+</div>
+<div class="actions"><button type="submit">Save referral reward</button></div>
+<p class="status" role="status" aria-live="polite"></p>
+</form>
+</section>
+</main>
 <script>
 (() => {
-  const form = document.getElementById('start-gift-settings');
   const csrfMeta = document.querySelector('meta[name="csrf-token"]');
   const csrf = csrfMeta ? csrfMeta.content : '';
-  const status = form.querySelector('.status');
 
-  form.addEventListener('submit', async event => {
+  const startForm = document.getElementById('start-gift-settings');
+  const startStatus = startForm.querySelector('.status');
+  startForm.addEventListener('submit', async event => {
     event.preventDefault();
-    status.textContent = '';
-    const bytes = form.elements.bytes.value.trim();
+    startStatus.textContent = '';
+    const bytes = startForm.elements.bytes.value.trim();
     if (!/^[1-9][0-9]*$/.test(bytes)) {
-      status.textContent = 'Start gift bytes must be a positive whole number.';
+      startStatus.textContent = 'Start gift bytes must be a positive whole number.';
       return;
     }
     try {
@@ -64,12 +79,45 @@ var startGiftPageTemplate = template.Must(template.New("settings").Parse(`<!doct
           const problem = await response.json();
           if (problem && problem.message) message = problem.message;
         } catch (_) {}
-        status.textContent = message;
+        startStatus.textContent = message;
         return;
       }
       location.reload();
     } catch (_) {
-      status.textContent = 'Request failed.';
+      startStatus.textContent = 'Request failed.';
+    }
+  });
+
+  const referralForm = document.getElementById('referral-reward-settings');
+  const referralStatus = referralForm.querySelector('.status');
+  referralForm.addEventListener('submit', async event => {
+    event.preventDefault();
+    referralStatus.textContent = '';
+    const rewardBytes = referralForm.elements.reward_bytes.value.trim();
+    const expiryDays = referralForm.elements.reward_expiry_days.value.trim();
+    if (!/^[1-9][0-9]*$/.test(rewardBytes) || !/^[1-9][0-9]*$/.test(expiryDays)) {
+      referralStatus.textContent = 'Reward bytes and expiry days must be positive whole numbers.';
+      return;
+    }
+    try {
+      const response = await fetch('/api/referral/reward-settings', {
+        method: 'PUT',
+        credentials: 'same-origin',
+        headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrf},
+        body: '{"bytes":' + rewardBytes + ',"expiry_days":' + expiryDays + '}'
+      });
+      if (!response.ok) {
+        let message = 'Request failed.';
+        try {
+          const problem = await response.json();
+          if (problem && problem.message) message = problem.message;
+        } catch (_) {}
+        referralStatus.textContent = message;
+        return;
+      }
+      location.reload();
+    } catch (_) {
+      referralStatus.textContent = 'Request failed.';
     }
   });
 })();
@@ -93,11 +141,17 @@ func (s *Server) handleStartGiftSettingsPage(w http.ResponseWriter, r *http.Requ
 		s.writeInternalError(w, r)
 		return
 	}
+	reward, err := settings.ReferralReward(r.Context(), s.db)
+	if err != nil {
+		s.writeInternalError(w, r)
+		return
+	}
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_ = startGiftPageTemplate.Execute(w, startGiftPageData{
 		Username: session.Admin.Username,
 		CSRF:     sessionCSRF(token),
 		Bytes:    value,
+		Reward:   reward,
 	})
 }
