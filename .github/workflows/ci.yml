@@ -52,5 +52,14 @@ jobs:
           docker version
           docker compose version
 
+      - name: Compose config validation
+        env:
+          TPROXY_PANEL_PORT: '8080'
+          TPROXY_DATA_DIR: /tmp/teleproxy-ci/data
+          TPROXY_SECRETS_DIR: /tmp/teleproxy-ci/secrets
+          TPROXY_PROXY_DATA_DIR: /tmp/teleproxy-ci/telemt
+          TPROXY_TELEMT_CONFIG: /tmp/teleproxy-ci/telemt.toml
+        run: docker compose config --quiet
+
       - name: End-to-end install, Telemt API isolation, and rerun
         run: bash tests/installer_e2e.sh
