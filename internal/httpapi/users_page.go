@@ -12,14 +12,15 @@ import (
 )
 
 type userPageData struct {
-	Username            string
-	CSRF                string
-	Users               []useradmin.Entry
-	TelegramIDFilter    string
-	ProxyUsernameFilter string
-	Limit               int
-	HasFilters          bool
-	NextPageURL         string
+	Username                string
+	CSRF                    string
+	Users                   []useradmin.Entry
+	TelegramIDFilter        string
+	ProxyUsernameFilter     string
+	ProvisioningPhaseFilter string
+	Limit                   int
+	HasFilters              bool
+	NextPageURL             string
 }
 
 var userPageTemplate = template.Must(template.New("users").Funcs(template.FuncMap{
@@ -51,7 +52,7 @@ var userPageTemplate = template.Must(template.New("users").Funcs(template.FuncMa
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Teleproxy Users</title>
 <style>
-:root{font-family:Inter,ui-sans-serif,system-ui,sans-serif;color-scheme:dark;background:#0b1020;color:#eef2ff}*{box-sizing:border-box}body{margin:0;background:#0b1020;color:#eef2ff}header{display:flex;gap:18px;justify-content:space-between;align-items:center;padding:18px 5vw;border-bottom:1px solid #24304c;background:#10172a}header nav{display:flex;gap:14px;align-items:center;flex-wrap:wrap}a{color:#c9d7ff}main{padding:30px 5vw 56px}.panel{border:1px solid #26324f;border-radius:16px;background:#11182a;padding:22px}.muted,.empty{color:#9aa8c4}.filters{display:flex;gap:12px;align-items:end;flex-wrap:wrap;margin:18px 0}.filters label{display:grid;gap:6px;font-size:12px;color:#aebbd6}.filters input{min-width:210px;border:1px solid #3a4a70;border-radius:8px;background:#0c1324;color:#eef2ff;padding:8px 10px}.filters button{border:1px solid #3a4a70;border-radius:8px;background:#18223a;color:#eef2ff;padding:8px 12px;cursor:pointer}.filters a{padding:8px 0}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;min-width:1510px}th,td{text-align:left;padding:10px;border-bottom:1px solid #26324f;vertical-align:top}th{font-size:12px;color:#aebbd6}td{font-size:13px}.tag{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.pager{margin-top:16px}.actions{display:flex;gap:8px;flex-wrap:wrap;min-width:190px}.actions button{border:1px solid #3a4a70;border-radius:8px;background:#18223a;color:#eef2ff;padding:7px 10px;cursor:pointer}.actions button:disabled{cursor:wait;opacity:.55}.action-status{min-height:18px;margin:8px 0 0;color:#b8c6e6;max-width:320px;overflow-wrap:anywhere}.action-status.error{color:#ffb8b8}.secret-reveal{margin-top:8px;padding:9px;border:1px solid #56698f;border-radius:8px;background:#0c1324;max-width:320px;overflow-wrap:anywhere}.secret-reveal code{display:block;margin-top:5px;white-space:pre-wrap;word-break:break-all}@media(max-width:600px){header{align-items:flex-start;flex-direction:column}}
+:root{font-family:Inter,ui-sans-serif,system-ui,sans-serif;color-scheme:dark;background:#0b1020;color:#eef2ff}*{box-sizing:border-box}body{margin:0;background:#0b1020;color:#eef2ff}header{display:flex;gap:18px;justify-content:space-between;align-items:center;padding:18px 5vw;border-bottom:1px solid #24304c;background:#10172a}header nav{display:flex;gap:14px;align-items:center;flex-wrap:wrap}a{color:#c9d7ff}main{padding:30px 5vw 56px}.panel{border:1px solid #26324f;border-radius:16px;background:#11182a;padding:22px}.muted,.empty{color:#9aa8c4}.filters{display:flex;gap:12px;align-items:end;flex-wrap:wrap;margin:18px 0}.filters label{display:grid;gap:6px;font-size:12px;color:#aebbd6}.filters input,.filters select{min-width:210px;border:1px solid #3a4a70;border-radius:8px;background:#0c1324;color:#eef2ff;padding:8px 10px}.filters button{border:1px solid #3a4a70;border-radius:8px;background:#18223a;color:#eef2ff;padding:8px 12px;cursor:pointer}.filters a{padding:8px 0}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;min-width:1510px}th,td{text-align:left;padding:10px;border-bottom:1px solid #26324f;vertical-align:top}th{font-size:12px;color:#aebbd6}td{font-size:13px}.tag{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.pager{margin-top:16px}.actions{display:flex;gap:8px;flex-wrap:wrap;min-width:190px}.actions button{border:1px solid #3a4a70;border-radius:8px;background:#18223a;color:#eef2ff;padding:7px 10px;cursor:pointer}.actions button:disabled{cursor:wait;opacity:.55}.action-status{min-height:18px;margin:8px 0 0;color:#b8c6e6;max-width:320px;overflow-wrap:anywhere}.action-status.error{color:#ffb8b8}.secret-reveal{margin-top:8px;padding:9px;border:1px solid #56698f;border-radius:8px;background:#0c1324;max-width:320px;overflow-wrap:anywhere}.secret-reveal code{display:block;margin-top:5px;white-space:pre-wrap;word-break:break-all}@media(max-width:600px){header{align-items:flex-start;flex-direction:column}}
 </style>
 </head>
 <body>
@@ -62,6 +63,7 @@ var userPageTemplate = template.Must(template.New("users").Funcs(template.FuncMa
 <form class="filters" method="get" action="/users" data-user-filter-form>
 <label>Telegram ID<input type="text" name="telegram_id" inputmode="numeric" autocomplete="off" value="{{.TelegramIDFilter}}"></label>
 <label>Proxy username<input type="text" name="proxy_username" autocomplete="off" value="{{.ProxyUsernameFilter}}"></label>
+<label>Provisioning phase<select name="provisioning_phase"><option value="">All</option><option value="prepared"{{if eq .ProvisioningPhaseFilter "prepared"}} selected{{end}}>prepared</option><option value="owned"{{if eq .ProvisioningPhaseFilter "owned"}} selected{{end}}>owned</option><option value="collision"{{if eq .ProvisioningPhaseFilter "collision"}} selected{{end}}>collision</option></select></label>
 {{if .Limit}}<input type="hidden" name="limit" value="{{.Limit}}">{{end}}
 <button type="submit">Filter</button>{{if .HasFilters}}<a href="/users">Clear filters</a>{{end}}
 </form>
@@ -86,7 +88,7 @@ var userPageTemplate = template.Must(template.New("users").Funcs(template.FuncMa
   const filterForm = document.querySelector("[data-user-filter-form]");
   if (filterForm) {
     filterForm.addEventListener("submit", function () {
-      filterForm.querySelectorAll('input[name="telegram_id"], input[name="proxy_username"]').forEach(function (input) {
+      filterForm.querySelectorAll('input[name="telegram_id"], input[name="proxy_username"], select[name="provisioning_phase"]').forEach(function (input) {
         if (input.value === "") input.disabled = true;
       });
     });
@@ -208,14 +210,15 @@ func (s *Server) handleUserAdminPage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_ = userPageTemplate.Execute(w, userPageData{
-		Username:            session.Admin.Username,
-		CSRF:                sessionCSRF(token),
-		Users:               page.Items,
-		TelegramIDFilter:    telegramIDFilter,
-		ProxyUsernameFilter: query.ProxyUsername,
-		Limit:               query.Limit,
-		HasFilters:          query.TelegramID > 0 || query.ProxyUsername != "",
-		NextPageURL:         userPageNextURL(query, page.NextBeforeID),
+		Username:                session.Admin.Username,
+		CSRF:                    sessionCSRF(token),
+		Users:                   page.Items,
+		TelegramIDFilter:        telegramIDFilter,
+		ProxyUsernameFilter:     query.ProxyUsername,
+		ProvisioningPhaseFilter: string(query.ProvisioningPhase),
+		Limit:                   query.Limit,
+		HasFilters:              query.TelegramID > 0 || query.ProxyUsername != "" || query.ProvisioningPhase != "",
+		NextPageURL:             userPageNextURL(query, page.NextBeforeID),
 	})
 }
 
@@ -232,6 +235,9 @@ func userPageNextURL(query useradmin.ListQuery, next *int64) string {
 	}
 	if query.ProxyUsername != "" {
 		values.Set("proxy_username", query.ProxyUsername)
+	}
+	if query.ProvisioningPhase != "" {
+		values.Set("provisioning_phase", string(query.ProvisioningPhase))
 	}
 	return "/users?" + values.Encode()
 }

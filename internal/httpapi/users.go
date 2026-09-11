@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/smorad3363/teleproxy/internal/proxyprovision"
 	"github.com/smorad3363/teleproxy/internal/proxyuser"
 	"github.com/smorad3363/teleproxy/internal/useradmin"
 )
@@ -39,7 +40,7 @@ func (s *Server) handleUserAdminList(w http.ResponseWriter, r *http.Request) {
 func parseUserAdminQuery(w http.ResponseWriter, r *http.Request) (useradmin.ListQuery, bool) {
 	values := r.URL.Query()
 	for key := range values {
-		if key != "before_id" && key != "limit" && key != "telegram_id" && key != "proxy_username" {
+		if key != "before_id" && key != "limit" && key != "telegram_id" && key != "proxy_username" && key != "provisioning_phase" {
 			writeUserAdminProblem(w, r, "The user inventory query is invalid.")
 			return useradmin.ListQuery{}, false
 		}
@@ -88,6 +89,20 @@ func parseUserAdminQuery(w http.ResponseWriter, r *http.Request) (useradmin.List
 			return useradmin.ListQuery{}, false
 		}
 		query.ProxyUsername = raw[0]
+	}
+	if raw, exists := values["provisioning_phase"]; exists {
+		if len(raw) != 1 {
+			writeUserAdminProblem(w, r, "The user inventory provisioning phase is invalid.")
+			return useradmin.ListQuery{}, false
+		}
+		phase := proxyprovision.Phase(raw[0])
+		switch phase {
+		case proxyprovision.PhasePrepared, proxyprovision.PhaseOwned, proxyprovision.PhaseCollision:
+			query.ProvisioningPhase = phase
+		default:
+			writeUserAdminProblem(w, r, "The user inventory provisioning phase is invalid.")
+			return useradmin.ListQuery{}, false
+		}
 	}
 	return query, true
 }

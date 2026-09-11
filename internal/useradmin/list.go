@@ -17,10 +17,11 @@ const (
 )
 
 type ListQuery struct {
-	BeforeID      int64
-	Limit         int
-	TelegramID    int64
-	ProxyUsername string
+	BeforeID          int64
+	Limit             int
+	TelegramID        int64
+	ProxyUsername     string
+	ProvisioningPhase proxyprovision.Phase
 }
 
 type Entry struct {
@@ -60,6 +61,13 @@ func List(ctx context.Context, db *sql.DB, query ListQuery, now time.Time) (Page
 	if query.ProxyUsername != "" {
 		if err := proxyuser.ValidateUsername(query.ProxyUsername); err != nil {
 			return Page{}, fmt.Errorf("user inventory proxy username is invalid: %w", err)
+		}
+	}
+	if query.ProvisioningPhase != "" {
+		switch query.ProvisioningPhase {
+		case proxyprovision.PhasePrepared, proxyprovision.PhaseOwned, proxyprovision.PhaseCollision:
+		default:
+			return Page{}, fmt.Errorf("user inventory provisioning phase is invalid")
 		}
 	}
 	if query.Limit == 0 {
@@ -110,7 +118,7 @@ FROM telegram_users AS tu
 JOIN proxy_users AS pu ON pu.id = tu.proxy_user_id
 LEFT JOIN proxy_user_provisioning AS pp ON pp.proxy_user_id = pu.id`
 	args := []any{nowUnix, nowUnix, nowUnix, nowUnix}
-	conditions := make([]string, 0, 3)
+	conditions := make([]string, 0, 4)
 	if query.BeforeID > 0 {
 		conditions = append(conditions, "tu.id < ?")
 		args = append(args, query.BeforeID)
@@ -122,6 +130,10 @@ LEFT JOIN proxy_user_provisioning AS pp ON pp.proxy_user_id = pu.id`
 	if query.ProxyUsername != "" {
 		conditions = append(conditions, "pu.username = ?")
 		args = append(args, query.ProxyUsername)
+	}
+	if query.ProvisioningPhase != "" {
+		conditions = append(conditions, "pp.phase = ?")
+		args = append(args, query.ProvisioningPhase)
 	}
 	if len(conditions) > 0 {
 		statement += "\nWHERE " + strings.Join(conditions, " AND ")

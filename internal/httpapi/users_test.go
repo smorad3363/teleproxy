@@ -107,6 +107,82 @@ func TestUserInventoryAPIPaginatesWithoutMutation(t *testing.T) {
 	}
 }
 
+func TestUserInventoryAPIFiltersExactProvisioningPhaseWithoutMutation(t *testing.T) {
+	ctx := context.Background()
+	db := testDB(t)
+	server, cookie := authenticatedUserInventoryAPI(t, db)
+	now := time.Now().UTC().Truncate(time.Second)
+
+	unprovisioned, err := telegramuser.Resolve(ctx, db, 9251, now.Add(-3*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared, err := telegramuser.Resolve(ctx, db, 9252, now.Add(-2*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	collision, err := telegramuser.Resolve(ctx, db, 9253, now.Add(-time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	preparedDigest := [32]byte{2}
+	if _, created, err := proxyprovision.Prepare(ctx, db, prepared.User.ProxyUsername, preparedDigest, now); err != nil {
+		t.Fatal(err)
+	} else if !created {
+		t.Fatal("prepared proxyprovision.Prepare() created = false")
+	}
+	collisionDigest := [32]byte{3}
+	if _, created, err := proxyprovision.Prepare(ctx, db, collision.User.ProxyUsername, collisionDigest, now); err != nil {
+		t.Fatal(err)
+	} else if !created {
+		t.Fatal("collision proxyprovision.Prepare() created = false")
+	}
+	if _, err := proxyprovision.MarkCollision(ctx, db, collision.User.ProxyUsername, collisionDigest, now.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+
+	beforeTelegram := countHTTPRows(t, db, "telegram_users")
+	beforeProxy := countHTTPRows(t, db, "proxy_users")
+	beforeProvisioning := countHTTPRows(t, db, "proxy_user_provisioning")
+	beforeReferrals := countHTTPRows(t, db, "referral_attributions")
+	beforeCredits := countHTTPRows(t, db, "credit_buckets")
+
+	for _, tc := range []struct {
+		path       string
+		wantUserID int64
+		wantPhase  *proxyprovision.Phase
+	}{
+		{path: "/api/users?provisioning_phase=prepared", wantUserID: prepared.User.ID, wantPhase: phasePointer(proxyprovision.PhasePrepared)},
+		{path: "/api/users?provisioning_phase=collision", wantUserID: collision.User.ID, wantPhase: phasePointer(proxyprovision.PhaseCollision)},
+		{path: "/api/users?provisioning_phase=owned"},
+		{path: "/api/users?telegram_id=" + strconv.FormatInt(unprovisioned.User.TelegramID, 10) + "&provisioning_phase=prepared"},
+	} {
+		response := performJSON(server.Handler(), http.MethodGet, tc.path, "", cookie, "")
+		if response.Code != http.StatusOK {
+			t.Fatalf("filtered users %q = %d %s", tc.path, response.Code, response.Body.String())
+		}
+		var page struct {
+			Users []useradmin.Entry `json:"users"`
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &page); err != nil {
+			t.Fatal(err)
+		}
+		if tc.wantUserID == 0 {
+			if len(page.Users) != 0 {
+				t.Fatalf("filtered users %q = %#v, want empty", tc.path, page.Users)
+			}
+			continue
+		}
+		if len(page.Users) != 1 || page.Users[0].TelegramUserID != tc.wantUserID || page.Users[0].ProvisioningPhase == nil || tc.wantPhase == nil || *page.Users[0].ProvisioningPhase != *tc.wantPhase {
+			t.Fatalf("filtered users %q = %#v", tc.path, page.Users)
+		}
+	}
+
+	if countHTTPRows(t, db, "telegram_users") != beforeTelegram || countHTTPRows(t, db, "proxy_users") != beforeProxy || countHTTPRows(t, db, "proxy_user_provisioning") != beforeProvisioning || countHTTPRows(t, db, "referral_attributions") != beforeReferrals || countHTTPRows(t, db, "credit_buckets") != beforeCredits {
+		t.Fatal("provisioning phase filter mutated authoritative state")
+	}
+}
+
 func TestUserInventoryAPIRejectsInvalidPagination(t *testing.T) {
 	db := testDB(t)
 	server, cookie := authenticatedUserInventoryAPI(t, db)
@@ -117,6 +193,10 @@ func TestUserInventoryAPIRejectsInvalidPagination(t *testing.T) {
 		"/api/users?before_id=1&before_id=2",
 		"/api/users?limit=0",
 		"/api/users?limit=" + strconv.Itoa(useradmin.MaxListLimit+1),
+		"/api/users?provisioning_phase=",
+		"/api/users?provisioning_phase=PREPARED",
+		"/api/users?provisioning_phase=unknown",
+		"/api/users?provisioning_phase=prepared&provisioning_phase=owned",
 		"/api/users?unknown=1",
 	} {
 		response := performJSON(server.Handler(), http.MethodGet, path, "", cookie, "")
@@ -124,6 +204,10 @@ func TestUserInventoryAPIRejectsInvalidPagination(t *testing.T) {
 			t.Fatalf("invalid users query %q = %d %s", path, response.Code, response.Body.String())
 		}
 	}
+}
+
+func phasePointer(phase proxyprovision.Phase) *proxyprovision.Phase {
+	return &phase
 }
 
 func authenticatedUserInventoryAPI(t *testing.T, db *sql.DB) (*Server, []*http.Cookie) {

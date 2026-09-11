@@ -111,6 +111,63 @@ func TestListProjectsAuthoritativeStateAndPaginates(t *testing.T) {
 	}
 }
 
+func TestListFiltersExactProvisioningPhase(t *testing.T) {
+	ctx := context.Background()
+	db := userAdminTestDB(t)
+	now := time.Date(2032, 4, 5, 6, 7, 8, 0, time.UTC)
+
+	unprovisioned := resolveUser(t, ctx, db, 8301, now.Add(-3*time.Hour))
+	prepared := resolveUser(t, ctx, db, 8302, now.Add(-2*time.Hour))
+	collision := resolveUser(t, ctx, db, 8303, now.Add(-time.Hour))
+
+	preparedDigest := [32]byte{2}
+	if _, created, err := proxyprovision.Prepare(ctx, db, prepared.User.ProxyUsername, preparedDigest, now); err != nil {
+		t.Fatal(err)
+	} else if !created {
+		t.Fatal("prepared proxyprovision.Prepare() created = false")
+	}
+	collisionDigest := [32]byte{3}
+	if _, created, err := proxyprovision.Prepare(ctx, db, collision.User.ProxyUsername, collisionDigest, now); err != nil {
+		t.Fatal(err)
+	} else if !created {
+		t.Fatal("collision proxyprovision.Prepare() created = false")
+	}
+	if _, err := proxyprovision.MarkCollision(ctx, db, collision.User.ProxyUsername, collisionDigest, now.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+
+	preparedPage, err := List(ctx, db, ListQuery{ProvisioningPhase: proxyprovision.PhasePrepared}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(preparedPage.Items) != 1 || preparedPage.Items[0].TelegramUserID != prepared.User.ID || preparedPage.Items[0].ProvisioningPhase == nil || *preparedPage.Items[0].ProvisioningPhase != proxyprovision.PhasePrepared {
+		t.Fatalf("prepared phase page = %#v", preparedPage)
+	}
+
+	collisionPage, err := List(ctx, db, ListQuery{ProvisioningPhase: proxyprovision.PhaseCollision}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(collisionPage.Items) != 1 || collisionPage.Items[0].TelegramUserID != collision.User.ID || collisionPage.Items[0].ProvisioningPhase == nil || *collisionPage.Items[0].ProvisioningPhase != proxyprovision.PhaseCollision {
+		t.Fatalf("collision phase page = %#v", collisionPage)
+	}
+
+	composed, err := List(ctx, db, ListQuery{TelegramID: prepared.User.TelegramID, ProvisioningPhase: proxyprovision.PhasePrepared}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(composed.Items) != 1 || composed.Items[0].TelegramUserID != prepared.User.ID {
+		t.Fatalf("composed phase page = %#v", composed)
+	}
+	contradictory, err := List(ctx, db, ListQuery{TelegramID: unprovisioned.User.TelegramID, ProvisioningPhase: proxyprovision.PhasePrepared}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(contradictory.Items) != 0 {
+		t.Fatalf("contradictory phase page = %#v", contradictory)
+	}
+}
+
 func TestListEmptyAndValidation(t *testing.T) {
 	db := userAdminTestDB(t)
 	now := time.Now().UTC()
@@ -121,7 +178,13 @@ func TestListEmptyAndValidation(t *testing.T) {
 	if page.Items == nil || len(page.Items) != 0 {
 		t.Fatalf("empty items = %#v", page.Items)
 	}
-	for _, query := range []ListQuery{{BeforeID: -1}, {Limit: -1}, {Limit: MaxListLimit + 1}} {
+	for _, query := range []ListQuery{
+		{BeforeID: -1},
+		{Limit: -1},
+		{Limit: MaxListLimit + 1},
+		{ProvisioningPhase: proxyprovision.Phase("unknown")},
+		{ProvisioningPhase: proxyprovision.Phase("PREPARED")},
+	} {
 		if _, err := List(context.Background(), db, query, now); err == nil {
 			t.Fatalf("List(%#v) error = nil", query)
 		}
