@@ -108,6 +108,79 @@ func TestUserPageRendersAuthoritativeInventoryAndPaginationWithoutMutation(t *te
 	}
 }
 
+func TestUserPageRendersEstablishedLifecycleControlsAndCSRF(t *testing.T) {
+	ctx := context.Background()
+	db := testDB(t)
+	server, cookie := authenticatedUserInventoryAPI(t, db)
+	resolved, err := telegramuser.Resolve(ctx, db, 9401, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	response := perform(server.Handler(), http.MethodGet, "/users", nil, cookie)
+	if response.Code != http.StatusOK {
+		t.Fatalf("users lifecycle page = %d %s", response.Code, response.Body.String())
+	}
+	body := response.Body.String()
+	for _, want := range []string{
+		`data-csrf="` + sessionCSRF(cookie[0].Value) + `"`,
+		`data-proxy-username="` + resolved.User.ProxyUsername + `"`,
+		`data-proxy-action="disable"`,
+		`data-proxy-action="rotate-secret"`,
+		`"X-CSRF-Token": csrf`,
+		`"/api/proxy/users/" + encodeURIComponent(username)`,
+		`window.location.reload()`,
+		`Shown once. Save it now; it will not be shown again.`,
+		`value.textContent = secret`,
+		`.slice(0, 256)`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("users lifecycle page missing %q: %s", want, body)
+		}
+	}
+	if strings.Contains(body, `data-proxy-action="enable"`) {
+		t.Fatalf("enabled row rendered enable action: %s", body)
+	}
+	if strings.Contains(body, proxyUserTestSecret) || strings.Contains(body, "navigator.clipboard") {
+		t.Fatalf("users page leaked/copied secret material: %s", body)
+	}
+
+	if _, err := proxyuser.SetDesiredEnabled(ctx, db, resolved.User.ProxyUsername, false); err != nil {
+		t.Fatal(err)
+	}
+	disabled := perform(server.Handler(), http.MethodGet, "/users", nil, cookie)
+	if disabled.Code != http.StatusOK || !strings.Contains(disabled.Body.String(), `data-proxy-action="enable"`) || strings.Contains(disabled.Body.String(), `data-proxy-action="disable"`) {
+		t.Fatalf("disabled user actions mismatch: %d %s", disabled.Code, disabled.Body.String())
+	}
+}
+
+func TestUserPageDoesNotGuessLifecycleTargetWithoutProxyUsername(t *testing.T) {
+	ctx := context.Background()
+	db := testDB(t)
+	server, cookie := authenticatedUserInventoryAPI(t, db)
+	resolved, err := telegramuser.Resolve(ctx, db, 9402, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE proxy_users SET username = '' WHERE id = ?`, resolved.User.ProxyUserID); err != nil {
+		t.Fatal(err)
+	}
+
+	response := perform(server.Handler(), http.MethodGet, "/users", nil, cookie)
+	if response.Code != http.StatusOK {
+		t.Fatalf("users empty proxy username page = %d %s", response.Code, response.Body.String())
+	}
+	body := response.Body.String()
+	if !strings.Contains(body, `data-proxy-actions-unavailable`) || !strings.Contains(body, `data-proxy-username=""`) {
+		t.Fatalf("empty proxy username did not render safe unavailable state: %s", body)
+	}
+	for _, action := range []string{"enable", "disable", "rotate-secret"} {
+		if strings.Contains(body, `data-proxy-action="`+action+`"`) {
+			t.Fatalf("empty proxy username rendered %q lifecycle target: %s", action, body)
+		}
+	}
+}
+
 func TestUserPageRejectsInvalidPaginationWithoutMutation(t *testing.T) {
 	db := testDB(t)
 	server, cookie := authenticatedUserInventoryAPI(t, db)

@@ -12,6 +12,7 @@ import (
 
 type userPageData struct {
 	Username    string
+	CSRF        string
 	Users       []useradmin.Entry
 	NextPageURL string
 }
@@ -39,30 +40,120 @@ var userPageTemplate = template.Must(template.New("users").Funcs(template.FuncMa
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Teleproxy Users</title>
 <style>
-:root{font-family:Inter,ui-sans-serif,system-ui,sans-serif;color-scheme:dark;background:#0b1020;color:#eef2ff}*{box-sizing:border-box}body{margin:0;background:#0b1020;color:#eef2ff}header{display:flex;gap:18px;justify-content:space-between;align-items:center;padding:18px 5vw;border-bottom:1px solid #24304c;background:#10172a}header nav{display:flex;gap:14px;align-items:center;flex-wrap:wrap}a{color:#c9d7ff}main{padding:30px 5vw 56px}.panel{border:1px solid #26324f;border-radius:16px;background:#11182a;padding:22px}.muted,.empty{color:#9aa8c4}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;min-width:1180px}th,td{text-align:left;padding:10px;border-bottom:1px solid #26324f;vertical-align:top}th{font-size:12px;color:#aebbd6}td{font-size:13px}.tag{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.pager{margin-top:16px}@media(max-width:600px){header{align-items:flex-start;flex-direction:column}}
+:root{font-family:Inter,ui-sans-serif,system-ui,sans-serif;color-scheme:dark;background:#0b1020;color:#eef2ff}*{box-sizing:border-box}body{margin:0;background:#0b1020;color:#eef2ff}header{display:flex;gap:18px;justify-content:space-between;align-items:center;padding:18px 5vw;border-bottom:1px solid #24304c;background:#10172a}header nav{display:flex;gap:14px;align-items:center;flex-wrap:wrap}a{color:#c9d7ff}main{padding:30px 5vw 56px}.panel{border:1px solid #26324f;border-radius:16px;background:#11182a;padding:22px}.muted,.empty{color:#9aa8c4}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;min-width:1390px}th,td{text-align:left;padding:10px;border-bottom:1px solid #26324f;vertical-align:top}th{font-size:12px;color:#aebbd6}td{font-size:13px}.tag{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.pager{margin-top:16px}.actions{display:flex;gap:8px;flex-wrap:wrap;min-width:190px}.actions button{border:1px solid #3a4a70;border-radius:8px;background:#18223a;color:#eef2ff;padding:7px 10px;cursor:pointer}.actions button:disabled{cursor:wait;opacity:.55}.action-status{min-height:18px;margin:8px 0 0;color:#b8c6e6;max-width:320px;overflow-wrap:anywhere}.action-status.error{color:#ffb8b8}.secret-reveal{margin-top:8px;padding:9px;border:1px solid #56698f;border-radius:8px;background:#0c1324;max-width:320px;overflow-wrap:anywhere}.secret-reveal code{display:block;margin-top:5px;white-space:pre-wrap;word-break:break-all}@media(max-width:600px){header{align-items:flex-start;flex-direction:column}}
 </style>
 </head>
 <body>
 <header><nav><strong>Teleproxy</strong><a href="/">Dashboard</a><a href="/users" aria-current="page">Users</a><a href="/sponsors">Sponsors</a><a href="/nodes">Proxy Nodes</a><a href="/referrals">Referrals</a><a href="/forced-join">Forced Join</a></nav><span class="muted">Signed in as {{.Username}}</span></header>
-<main><section class="panel">
+<main id="user-admin" data-csrf="{{.CSRF}}"><section class="panel">
 <h1>Users</h1>
-<p class="muted">Read-only authoritative Control Plane inventory. Telegram username, traffic, Node/Sponsor assignment, secret status and general last activity are not inferred.</p>
+<p class="muted">Authoritative Control Plane inventory. Enable/Disable and Rotate secret use the established proxy lifecycle API. Telegram username, traffic, Node/Sponsor assignment, secret status and general last activity are not inferred.</p>
 {{if .Users}}
 <div class="table-wrap"><table>
-<thead><tr><th>Telegram ID</th><th>Proxy username</th><th>Enabled</th><th>Sync state</th><th>Last error</th><th>Available bytes</th><th>Nearest expiry</th><th>Referrals</th><th>Created at</th><th>Updated at</th></tr></thead>
+<thead><tr><th>Telegram ID</th><th>Proxy username</th><th>Enabled</th><th>Sync state</th><th>Last error</th><th>Available bytes</th><th>Nearest expiry</th><th>Referrals</th><th>Created at</th><th>Updated at</th><th>Actions</th></tr></thead>
 <tbody>
 {{range .Users}}
-<tr><td class="tag">{{.TelegramID}}</td><td class="tag">{{.ProxyUsername}}</td><td>{{.DesiredEnabled}}</td><td>{{.SyncState}}</td><td class="tag">{{userErrorCode .LastErrorCode}}</td><td class="tag">{{.AvailableBytes}}</td><td>{{userOptionalTime .NearestExpiry}}</td><td class="tag">{{.ReferralCount}}</td><td>{{userTime .CreatedAt}}</td><td>{{userTime .UpdatedAt}}</td></tr>
+<tr data-proxy-username="{{.ProxyUsername}}"><td class="tag">{{.TelegramID}}</td><td class="tag">{{.ProxyUsername}}</td><td>{{.DesiredEnabled}}</td><td>{{.SyncState}}</td><td class="tag">{{userErrorCode .LastErrorCode}}</td><td class="tag">{{.AvailableBytes}}</td><td>{{userOptionalTime .NearestExpiry}}</td><td class="tag">{{.ReferralCount}}</td><td>{{userTime .CreatedAt}}</td><td>{{userTime .UpdatedAt}}</td><td>{{if .ProxyUsername}}<div class="actions">{{if .DesiredEnabled}}<button type="button" data-proxy-action="disable">Disable</button>{{else}}<button type="button" data-proxy-action="enable">Enable</button>{{end}}<button type="button" data-proxy-action="rotate-secret">Rotate secret</button></div><p class="action-status" data-action-status role="status" aria-live="polite"></p><div class="secret-reveal" data-secret-reveal hidden><strong>Shown once. Save it now; it will not be shown again.</strong><code data-secret-value></code></div>{{else}}<span class="muted" data-proxy-actions-unavailable>Unavailable</span>{{end}}</td></tr>
 {{end}}
 </tbody></table></div>
 {{else}}<p class="empty">No Telegram users yet.</p>{{end}}
 {{if .NextPageURL}}<p class="pager"><a href="{{.NextPageURL}}">Older users</a></p>{{end}}
 </section></main>
+<script>
+(function () {
+  "use strict";
+  const root = document.getElementById("user-admin");
+  if (!root) return;
+  const csrf = root.dataset.csrf || "";
+  const allowedActions = new Set(["enable", "disable", "rotate-secret"]);
+
+  function setBusy(row, busy) {
+    row.querySelectorAll("button[data-proxy-action]").forEach(function (button) {
+      button.disabled = busy;
+    });
+  }
+
+  function setStatus(row, message, isError) {
+    const status = row.querySelector("[data-action-status]");
+    if (!status) return;
+    status.textContent = String(message || "").slice(0, 256);
+    status.classList.toggle("error", Boolean(isError));
+  }
+
+  async function problemText(response) {
+    let payload = null;
+    try {
+      payload = await response.json();
+    } catch (_) {
+      payload = null;
+    }
+    const code = payload && typeof payload.code === "string" ? payload.code : "REQUEST_FAILED";
+    const message = payload && typeof payload.message === "string" ? payload.message : "The proxy lifecycle request failed.";
+    return (code + ": " + message).slice(0, 256);
+  }
+
+  document.addEventListener("click", async function (event) {
+    const button = event.target.closest("button[data-proxy-action]");
+    if (!button) return;
+    const row = button.closest("tr[data-proxy-username]");
+    if (!row) return;
+    const username = row.dataset.proxyUsername || "";
+    const action = button.dataset.proxyAction || "";
+    if (!username || !allowedActions.has(action)) {
+      setStatus(row, "Lifecycle action is unavailable for this row.", true);
+      return;
+    }
+    if (action === "rotate-secret" && !window.confirm("Rotate this proxy secret? The previous secret will stop working.")) {
+      return;
+    }
+
+    setBusy(row, true);
+    setStatus(row, "Applying lifecycle action…", false);
+    try {
+      const endpoint = "/api/proxy/users/" + encodeURIComponent(username) + "/" + action;
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Accept": "application/json",
+          "X-CSRF-Token": csrf
+        }
+      });
+      if (!response.ok) {
+        setStatus(row, await problemText(response), true);
+        return;
+      }
+      if (action === "rotate-secret") {
+        const payload = await response.json();
+        const secret = payload && typeof payload.secret === "string" ? payload.secret : "";
+        if (!secret) {
+          setStatus(row, "Secret rotation returned an invalid response.", true);
+          return;
+        }
+        const reveal = row.querySelector("[data-secret-reveal]");
+        const value = row.querySelector("[data-secret-value]");
+        if (!reveal || !value) {
+          setStatus(row, "Secret rotation succeeded but the reveal area is unavailable.", true);
+          return;
+        }
+        value.textContent = secret;
+        reveal.hidden = false;
+        setStatus(row, "Secret rotated. The new secret is shown once below.", false);
+        return;
+      }
+      window.location.reload();
+    } catch (_) {
+      setStatus(row, "REQUEST_FAILED: The proxy lifecycle request could not be completed.", true);
+    } finally {
+      setBusy(row, false);
+    }
+  });
+}());
+</script>
 </body>
 </html>`))
 
 func (s *Server) handleUserAdminPage(w http.ResponseWriter, r *http.Request) {
-	session, _, ok, err := s.currentSession(r)
+	session, token, ok, err := s.currentSession(r)
 	if err != nil {
 		s.writeInternalError(w, r)
 		return
@@ -85,6 +176,7 @@ func (s *Server) handleUserAdminPage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_ = userPageTemplate.Execute(w, userPageData{
 		Username:    session.Admin.Username,
+		CSRF:        sessionCSRF(token),
 		Users:       page.Items,
 		NextPageURL: userPageNextURL(query, page.NextBeforeID),
 	})
