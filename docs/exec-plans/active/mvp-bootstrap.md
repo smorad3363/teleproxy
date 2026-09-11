@@ -3,10 +3,10 @@
 Status: ACTIVE
 Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
-Latest verified code checkpoint: `76681c8c7a5031cb44d3c12e3664d11f8421cc29` (CP-063)
-Most recent verified code CI: `34621814385` PASS
-Current branch checkpoint: `2ef6317a251990f056fff7d518adc680887d67d3` (CP-063 promotion docs)
-Current branch CI: `34622311160` PASS
+Latest verified code checkpoint: `e20f3cb2c17489cbf911b3bdd3130bf420978d4d` (CP-064)
+Most recent verified code CI: `34624305188` PASS
+Current branch checkpoint: `e20f3cb2c17489cbf911b3bdd3130bf420978d4d` (CP-064 candidate)
+Current branch CI: `34624305188` PASS
 
 Historical execution detail through CP-059 is preserved byte-for-byte at
 `docs/exec-plans/archive/mvp-bootstrap-through-cp059.md`, using the prior active-plan
@@ -67,6 +67,21 @@ was published.
   E2E/rerun including `tproxy doctor` after initial install and rerun.
 - CP-063 promotion docs:
   `2ef6317a251990f056fff7d518adc680887d67d3`, CI `34622311160` PASS.
+- Stage 12B scope docs:
+  `26e5ba683a1c26579db5c916ac890dc01864bbc2`, CI `34623293172` PASS.
+- Stage 12B first candidate:
+  `c22a0cc81013d329ef0381982908e14b87dab827`, CI `34623606814` FAILED at the new
+  ShellCheck gate. The gate exposed pre-existing `SC1091`, `SC2034`, `SC2251`, and
+  `SC2024` findings; later installer syntax/unit, Docker, and E2E gates were skipped.
+- Stage 12B first forward repair:
+  `86189982ad860aaa08d12beda8a8d42b724f5595`, CI `34624091531` FAILED only on the
+  two remaining `SC1091` source-resolution findings. The unused loop variable, test
+  assertions, and intentional redirect finding were already repaired; later installer
+  gates were skipped again.
+- CP-064 CI ShellCheck gate and minimal shell repairs:
+  `e20f3cb2c17489cbf911b3bdd3130bf420978d4d`, CI `34624305188` PASS across Format,
+  Vet, full Go tests, ShellCheck, installer syntax/unit tests, Docker prerequisites,
+  and Telemt E2E/rerun.
 
 ## Explicit blockers
 
@@ -164,49 +179,46 @@ connectivity, DNS, disk, clock, repair semantics, or unrelated CLI command behav
 added or changed. Candidate `76681c8c7a5031cb44d3c12e3664d11f8421cc29`,
 CI `34621814385` PASS all gates.
 
-## Stage 12B — CI ShellCheck gate — ACTIVE
+## Stage 12B — CI ShellCheck gate — COMPLETED AT CP-064
 
-The roadmap explicitly requires ShellCheck in recommended CI. The current workflow
-performs Bash syntax checks and shell unit/E2E tests but has no ShellCheck gate. This
-stage adds one bounded static-analysis gate for the repository's existing shell entry
-points and tests.
-
-The intended first implementation changes only `.github/workflows/ci.yml`, adding a
-ShellCheck step in the existing `installer` job after checkout and before syntax/unit
-tests. It checks exactly the current shell files already covered by the installer CI
-path: `install.sh`, `scripts/install_lib.sh`, `scripts/install-host.sh`, `bin/tproxy`,
+CP-064 adds the roadmap-required ShellCheck gate to the existing `installer` CI job
+without adding a third-party action, package install, remote script, or downloaded
+binary. The gate uses the ShellCheck binary already present on the GitHub-hosted Ubuntu
+runner and checks exactly the six existing shell files in the installer CI path:
+`install.sh`, `scripts/install_lib.sh`, `scripts/install-host.sh`, `bin/tproxy`,
 `tests/installer_lib_test.sh`, and `tests/installer_e2e.sh`.
 
-Use the ShellCheck binary supplied by the GitHub-hosted Ubuntu runner; do not add a
-third-party action, remote install script, new package repository, or downloaded
-binary. The existing Bash syntax/unit, Docker prerequisite, and installer/Telemt E2E
-gates remain unchanged and still run after ShellCheck.
+The first candidate exposed pre-existing lint findings and was repaired forward only.
+The final gate runs `shellcheck -x` so the two established `source` directives can be
+followed. Their annotations now resolve to the repository path
+`scripts/install_lib.sh`. The unused retry loop variable became `_`; the two negative
+validator assertions were rewritten as explicit failing `if` blocks; and the E2E
+installer redirect keeps one line-local `SC2024` suppression with an explanatory
+comment because `sudo` intentionally applies to the installer process while the
+redirect remains owned by the invoking CI user. No warning class is disabled broadly.
 
-If the new gate exposes pre-existing ShellCheck findings, repair them forward only
-when the fix is demonstrably semantics-preserving and limited to the listed shell
-files. Do not suppress broad warning classes, add blanket exclusions, or refactor
-unrelated installer/CLI behavior merely to silence the linter. Any such repair must be
-reviewed as part of the candidate diff and pass the full existing CI.
+The final scoped diff from Stage 12B scope contains exactly:
+- `.github/workflows/ci.yml`
+- `scripts/install-host.sh`
+- `tests/installer_lib_test.sh`
+- `tests/installer_e2e.sh`
 
-No runtime feature, endpoint, migration, Docker topology, installer behavior, CLI
-command semantics, secret handling, backup/update/rollback/watchdog behavior, Bot
-behavior, Node health, referral semantics, or Control/Proxy lifecycle coupling is in
-scope.
+Executable modes remain unchanged for the three shell files. Existing Bash
+syntax/unit, Docker prerequisite, and Telemt E2E/rerun gates remain intact and run
+after ShellCheck. No runtime feature, endpoint, migration, Docker topology, installer
+behavior, CLI command semantics, secret handling, backup/update/rollback/watchdog
+behavior, Bot behavior, Node health, referral semantics, or Control/Proxy lifecycle
+coupling was added or changed.
 
-### Acceptance
-
-- CI has an explicit ShellCheck step in the existing installer job.
-- The gate covers exactly the six existing shell files listed above.
-- No third-party action or network-time shell linter installer is introduced.
-- Existing Bash syntax/unit, Docker prerequisite, and Telemt E2E/rerun gates remain
-  intact.
-- Any linter-driven source repair is minimal, forward-only, and semantics-preserving.
-- Full CI passes.
+Candidate chain and CI evidence:
+- `c22a0cc81013d329ef0381982908e14b87dab827`, CI `34623606814` FAILED at ShellCheck.
+- `86189982ad860aaa08d12beda8a8d42b724f5595`, CI `34624091531` FAILED only on
+  remaining source-resolution `SC1091` findings.
+- `e20f3cb2c17489cbf911b3bdd3130bf420978d4d`, CI `34624305188` PASS all gates.
 
 ## Current next action
 
-Publish this Stage 12B scope as a plan-only commit and require full CI PASS. Then add
-only the bounded ShellCheck CI gate above; if it reports existing findings, repair only
-minimal semantics-preserving shell issues and require full CI again before checkpoint
-promotion. Preserve every explicit blocker and do not broaden the milestone into
-runtime or product behavior.
+Promote CP-064 documentation only and require full CI PASS. Then inspect the roadmap
+and current repository contracts for the next semantics-established bounded milestone.
+Preserve every explicit blocker, lifecycle separation, and Credit Buckets as
+authoritative quota/reward state; do not invent missing product/runtime semantics.
