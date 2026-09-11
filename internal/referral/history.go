@@ -128,15 +128,6 @@ JOIN telegram_users AS invitee ON invitee.id = ra.invitee_user_id`
 	return page, nil
 }
 
-func validRejectionReason(reason RejectionReason) bool {
-	switch reason {
-	case RejectionAntiAbuse, RejectionDailyCap, RejectionWeeklyCap, RejectionCooldown, RejectionBlacklist, RejectionSuspicious:
-		return true
-	default:
-		return false
-	}
-}
-
 func scanHistoryEntry(row scanner) (HistoryEntry, error) {
 	var entry HistoryEntry
 	var status string
