@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/smorad3363/teleproxy/internal/proxyuser"
@@ -15,8 +16,10 @@ const (
 )
 
 type ListQuery struct {
-	BeforeID int64
-	Limit    int
+	BeforeID      int64
+	Limit         int
+	TelegramID    int64
+	ProxyUsername string
 }
 
 type Entry struct {
@@ -48,6 +51,14 @@ func List(ctx context.Context, db *sql.DB, query ListQuery, now time.Time) (Page
 	}
 	if query.BeforeID < 0 {
 		return Page{}, fmt.Errorf("user inventory before ID must not be negative")
+	}
+	if query.TelegramID < 0 {
+		return Page{}, fmt.Errorf("user inventory Telegram ID must not be negative")
+	}
+	if query.ProxyUsername != "" {
+		if err := proxyuser.ValidateUsername(query.ProxyUsername); err != nil {
+			return Page{}, fmt.Errorf("user inventory proxy username is invalid: %w", err)
+		}
 	}
 	if query.Limit == 0 {
 		query.Limit = DefaultListLimit
@@ -95,9 +106,21 @@ SELECT
 FROM telegram_users AS tu
 JOIN proxy_users AS pu ON pu.id = tu.proxy_user_id`
 	args := []any{nowUnix, nowUnix, nowUnix, nowUnix}
+	conditions := make([]string, 0, 3)
 	if query.BeforeID > 0 {
-		statement += "\nWHERE tu.id < ?"
+		conditions = append(conditions, "tu.id < ?")
 		args = append(args, query.BeforeID)
+	}
+	if query.TelegramID > 0 {
+		conditions = append(conditions, "tu.telegram_id = ?")
+		args = append(args, query.TelegramID)
+	}
+	if query.ProxyUsername != "" {
+		conditions = append(conditions, "pu.username = ?")
+		args = append(args, query.ProxyUsername)
+	}
+	if len(conditions) > 0 {
+		statement += "\nWHERE " + strings.Join(conditions, " AND ")
 	}
 	statement += "\nORDER BY tu.id DESC\nLIMIT ?"
 	args = append(args, query.Limit+1)

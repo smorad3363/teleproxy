@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/smorad3363/teleproxy/internal/proxyuser"
 	"github.com/smorad3363/teleproxy/internal/useradmin"
 )
 
@@ -38,7 +39,7 @@ func (s *Server) handleUserAdminList(w http.ResponseWriter, r *http.Request) {
 func parseUserAdminQuery(w http.ResponseWriter, r *http.Request) (useradmin.ListQuery, bool) {
 	values := r.URL.Query()
 	for key := range values {
-		if key != "before_id" && key != "limit" {
+		if key != "before_id" && key != "limit" && key != "telegram_id" && key != "proxy_username" {
 			writeUserAdminProblem(w, r, "The user inventory query is invalid.")
 			return useradmin.ListQuery{}, false
 		}
@@ -68,6 +69,25 @@ func parseUserAdminQuery(w http.ResponseWriter, r *http.Request) (useradmin.List
 			return useradmin.ListQuery{}, false
 		}
 		query.Limit = value
+	}
+	if raw, exists := values["telegram_id"]; exists {
+		if len(raw) != 1 {
+			writeUserAdminProblem(w, r, "The user inventory Telegram ID is invalid.")
+			return useradmin.ListQuery{}, false
+		}
+		value, err := strconv.ParseInt(raw[0], 10, 64)
+		if err != nil || value <= 0 {
+			writeUserAdminProblem(w, r, "The user inventory Telegram ID is invalid.")
+			return useradmin.ListQuery{}, false
+		}
+		query.TelegramID = value
+	}
+	if raw, exists := values["proxy_username"]; exists {
+		if len(raw) != 1 || proxyuser.ValidateUsername(raw[0]) != nil {
+			writeUserAdminProblem(w, r, "The user inventory proxy username is invalid.")
+			return useradmin.ListQuery{}, false
+		}
+		query.ProxyUsername = raw[0]
 	}
 	return query, true
 }
