@@ -3,7 +3,7 @@
 Status: ACTIVE
 Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
-Latest verified checkpoint: `8588193e98d027c16f45b3f77149acf18c65cb9f`
+Latest verified checkpoint: `4a52a8864f1f348c5020fbfff7d76b3dbeaa59e8`
 
 ## Recovery contract
 
@@ -61,6 +61,7 @@ Non-negotiable architecture: SQLite WAL/NORMAL is authoritative Control Plane st
 - CP-047 Bot Content persistence primitives: `88465adede77f118c9507b016bd38274bd2408f0`, CI `34543883064` PASS.
 - CP-048 Authenticated Bot Content Admin API: `10dbde635dc8909e9bcbbe633ff659fc9934480e`, CI `34544396136` PASS.
 - CP-049 Web Panel Bot Content management surface: `8588193e98d027c16f45b3f77149acf18c65cb9f`, CI `34544809255` PASS.
+- CP-050 Audit Log persistence primitives: `4a52a8864f1f348c5020fbfff7d76b3dbeaa59e8`, CI `34567969934` PASS.
 
 ### Recent implemented checkpoints
 
@@ -71,6 +72,7 @@ Non-negotiable architecture: SQLite WAL/NORMAL is authoritative Control Plane st
 - CP-047 added migration `013_bot_content.sql` plus literal-text Bot Content persistence for seven fixed roadmap slots. Initial `f9b5ad04...` CI failed only because legacy migration-count tests expected 12; forward repair ended at `88465ade...`, CI `34543883064` PASS.
 - CP-048 added authenticated `GET /api/bot-content`, CSRF-protected per-slot `PUT` and `DELETE`, bounded strict JSON, typed Problems, deterministic configured-only list and empty `[]`. No Bot runtime wiring or network calls. Candidate `10dbde63...`, CI `34544396136` PASS.
 - CP-049 added authenticated `/bot-content` Web Panel showing all seven fixed slots, explicit not-configured state, escaped literal text and same-origin CSRF PUT/DELETE wiring over CP-048. No fallback copy or Bot runtime wiring. Candidate `8588193e...`, CI `34544809255` PASS.
+- CP-050 added additive migration `014_audit_log.sql` plus `internal/auditlog` append/get/list primitives for roadmap actor/action/target/before/after/timestamp/request-ID fields. The table is database-level append-only via update/delete rejection triggers; required identifiers and snapshots are bounded/UTF-8 validated; snapshots remain opaque caller-owned text, no existing mutation path is wired, and sensitive state is never implicitly copied. Migration compatibility tests now expect 14. Candidate `4a52a886...`, CI `34567969934` PASS.
 
 ## Supplied source hashes
 
@@ -88,26 +90,25 @@ Telemt `3.5.7`, upstream commit `4ca7418442478cd92f9e861c21977a81b249efc8`.
 
 ## Active stage
 
-### Stage 11I — Audit Log persistence primitives — ACTIVE
+### Stage 11J — Authenticated read-only Audit Log Admin API — ACTIVE
 
-Roadmap basis: Web Panel Audit Log explicitly requires actor, action, target, before, after, timestamp and request ID, and explicitly forbids raw secrets in audit records. This milestone adds only append/read persistence primitives; no existing mutation path is wired to audit logging yet.
+Roadmap Audit Log fields are now persisted by CP-050. This milestone exposes only authenticated read access to those entries; it does not add an audit write endpoint and does not wire existing mutations to audit logging.
 
 Scope only:
-- add one additive migration for an append-only audit log containing actor, action, target, optional before/after snapshots, timestamp and request ID;
-- add a narrow `internal/auditlog` domain/store with append and deterministic bounded read primitives;
-- validate required textual identity/action/target/request-ID fields and bounded UTF-8 snapshot payloads;
-- represent before/after as opaque text owned by the caller; this primitive does not serialize domain objects or infer secret redaction policy;
-- never log or persist a raw secret from any existing path; no existing caller is wired in this milestone;
-- update migration-count compatibility tests for the additive migration;
-- no Admin API, Web Panel page, Telegram/Telemt call, Node/Sponsor routing, reward issuance, secret handling change or installer/compose change.
+- add authenticated `GET /api/audit-log` using existing Admin API session authentication;
+- accept only bounded `before_id` / `limit` pagination parameters with stable typed Problem responses;
+- default to a bounded page size and cap requests at 100 entries;
+- list newest entries first from authoritative SQLite and preserve stored actor/action/target/before/after/request-ID/timestamp exactly;
+- return an explicit empty JSON array when no rows exist and `Cache-Control: no-store` on success;
+- no CSRF requirement for this read-only GET; no POST/PUT/PATCH/DELETE audit endpoint;
+- no migration, mutation wiring, automatic snapshot serialization/redaction, Telegram/Telemt call, Node/Sponsor routing, reward issuance or installer/compose change.
 
 Acceptance:
-- migration is additive, idempotent under existing migration runner and preserves existing data;
-- append rejects missing/invalid required fields and oversized/invalid UTF-8 snapshots without mutation;
-- list/read ordering is deterministic and bounded, with explicit empty `[]` behavior;
-- stored timestamp is UTC second precision and request ID round-trips exactly;
-- no update/delete primitive is exposed by `internal/auditlog`;
-- tests prove existing sensitive tables/fields are not copied into the audit log implicitly;
+- unauthenticated GET fails with existing `AUTH_REQUIRED` Problem;
+- authorized GET returns deterministic newest-first entries and bounded cursor pagination;
+- invalid/duplicate/unknown pagination parameters fail with typed `AUDIT_LOG_INVALID` Problem and do not mutate state;
+- empty history serializes as `[]`, never `null`;
+- GET does not alter `audit_log` or other authoritative tables;
 - format/vet/test and Docker/Telemt E2E remain green.
 
 ### Stage 11H — Bot Content runtime delivery wiring — BLOCKED ON PRODUCT SEMANTICS
@@ -136,6 +137,7 @@ Roadmap requires configurable daily/weekly caps, cooldowns, blacklist and suspic
 - Start Gift configuration affects only future exactly-once grants.
 - Bot Content remains literal text overrides only. Absent slots stay absent; runtime defaults, templates/formatting, buttons/emoji and Bot delivery wiring are separate contracts.
 - Audit Log primitives remain caller-driven and append-only; snapshot serialization/redaction is not guessed by the persistence layer.
+- Audit Log Admin API is read-only; mutation logging/redaction/actor propagation is a separate contract and must not be inferred.
 
 ## Validation/failure log
 
@@ -146,8 +148,11 @@ Roadmap requires configurable daily/weekly caps, cooldowns, blacklist and suspic
 - CP-048 candidate `10dbde63...` CI `34544396136` PASS across full Go and installer/Docker/Telemt E2E validation.
 - CP-048 promotion docs `b6e7dc81...` CI `34544624549` PASS.
 - CP-049 candidate `8588193e...` CI `34544809255` PASS across full Go and installer/Docker/Telemt E2E validation.
+- CP-049 promotion docs `d2cef37c...` CI `34567507147` PASS.
+- CP-050 candidate `4a52a886...` CI `34567969934` PASS across Format, Vet, full Go tests, installer syntax/unit tests, Docker prerequisites and Telemt E2E/rerun.
+- Local clone for CP-050 targeted tests was unavailable because the container could not resolve github.com; staged Go files were gofmt-clean and production `store.go` compile-checked locally before atomic publication, then full GitHub CI supplied the authoritative verification.
 - One initial 11F `create_tree` connector call was tool-blocked before any branch move; retry succeeded with the same three staged blobs. No repository state was changed by the blocked call.
 
 ## Current next action
 
-Verify the CP-049 promotion docs-head CI. Then implement only Stage 11I Audit Log persistence primitives. Keep Bot runtime delivery/wiring, fallback/default copy, templates/placeholders/formatting, button labels/emoji, secrets, reward issuance, unresolved anti-abuse policy, Node runtime probing, multi-Telemt routing and installer/compose behavior unchanged.
+Verify the CP-050 promotion docs-head CI. Then implement only Stage 11J authenticated read-only Audit Log Admin API. Keep audit write endpoints, automatic mutation logging/snapshot serialization/redaction, Bot runtime delivery/wiring, fallback/default copy, templates/placeholders/formatting, button labels/emoji, secrets, reward issuance, unresolved anti-abuse policy, Node runtime probing, multi-Telemt routing and installer/compose behavior unchanged.
