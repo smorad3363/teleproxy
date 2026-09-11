@@ -3,7 +3,7 @@
 Status: ACTIVE
 Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
-Latest verified checkpoint: `7bcc56493504bdf4c25b5c641aa4a462d9851772`
+Latest verified checkpoint: `93d05fa059f45387d02c69f5b74a5bad170ccf9d`
 
 ## Recovery contract
 
@@ -67,6 +67,7 @@ Non-negotiable architecture: SQLite WAL/NORMAL is authoritative Control Plane st
 - CP-051 Authenticated read-only Audit Log Admin API: `89c147f0a34ccc62f8014c030beef2a443c9cc15`, CI `34573865558` PASS.
 - CP-052 Web Panel read-only Audit Log surface: `44894ff9ee82a2bd09e5be94e295704940ad383c`, CI `34576150059` PASS.
 - CP-053 Web Panel read-only established System health surface: `7bcc56493504bdf4c25b5c641aa4a462d9851772`, CI `34577276205` PASS.
+- CP-054 Authenticated read-only Administrator inventory API: `93d05fa059f45387d02c69f5b74a5bad170ccf9d`, CI `34579311752` PASS.
 
 ### Recent implemented checkpoints
 
@@ -79,8 +80,9 @@ Non-negotiable architecture: SQLite WAL/NORMAL is authoritative Control Plane st
 - CP-049 added authenticated `/bot-content` Web Panel showing all seven fixed slots, explicit not-configured state, escaped literal text and same-origin CSRF PUT/DELETE wiring over CP-048. No fallback copy or Bot runtime wiring. Candidate `8588193e...`, CI `34544809255` PASS.
 - CP-050 added additive migration `014_audit_log.sql` plus `internal/auditlog` append/get/list primitives for roadmap actor/action/target/before/after/timestamp/request-ID fields. The table is database-level append-only via update/delete rejection triggers; required identifiers and snapshots are bounded/UTF-8 validated; snapshots remain opaque caller-owned text, no existing mutation path is wired, and sensitive state is never implicitly copied. Migration compatibility tests now expect 14. Candidate `4a52a886...`, CI `34567969934` PASS.
 - CP-051 added authenticated read-only `GET /api/audit-log` with bounded `before_id`/`limit` pagination, newest-first SQLite reads, exact stored audit fields, explicit empty `[]`, `Cache-Control: no-store`, stable `AUDIT_LOG_INVALID` Problems, and no mutation endpoint or automatic mutation wiring. Candidate `89c147f0...`, CI `34573865558` PASS.
-- CP-052 added authenticated read-only `GET /audit-log` Web Panel using the existing page-session pattern, exact newest-first CP-051 pagination, escaped literal before/after snapshots with explicit absence, actor/action/target/request ID/RFC3339 timestamp display, explicit safe empty state and a minimal Dashboard link. No audit writes, migrations, mutation logging/redaction semantics, Telegram/Telemt changes, routing changes or reward semantics were added. Candidate `44894ff9...`, CI `34576150059` PASS.
+- CP-052 added authenticated `GET /audit-log` Web Panel using the existing page-session pattern, exact newest-first CP-051 pagination, escaped literal before/after snapshots with explicit absence, actor/action/target/request ID/RFC3339 timestamp display, explicit safe empty state and a minimal Dashboard link. No audit writes, migrations, mutation logging/redaction semantics, Telegram/Telemt changes, routing changes or reward semantics were added. Candidate `44894ff9...`, CI `34576150059` PASS.
 - CP-053 added authenticated read-only `GET /system` Web Panel over already-established Control Plane, database readiness and single global Telemt health contracts. It shows Panel `online`, DB `ready`/`unavailable`, exact safe global Proxy state plus existing read-only flag, and a minimal Dashboard link. No migrations, mutations, polling, per-Node probing/credentials, Bot-status inference, telemetry, Docker/runtime actions, logs, backup/update/restart/repair/diagnostics semantics, routing or reward behavior were added. Candidate `7bcc5649...`, CI `34577276205` PASS.
+- CP-054 added authenticated read-only `GET /api/admins` backed only by existing authoritative `admins` columns. It returns deterministic ascending-ID inventory with `id`, `username`, literal `role`, `enabled`, `created_at` and `updated_at`, rejects query keys, uses `Cache-Control: no-store`, and never serializes password hashes or admin-session material. No RBAC interpretation/mutation, migration, audit mutation wiring or runtime/network behavior was added. Candidate `93d05fa0...`, CI `34579311752` PASS.
 
 ## Supplied source hashes
 
@@ -106,27 +108,13 @@ CP-052 implements the bounded authenticated Web Panel Audit Log surface over the
 
 CP-053 exposes only the already-established Control Plane liveness meaning, database readiness check and single global Telemt health state in authenticated `/system`. Candidate CI `34577276205` and promotion/docs CI `34577610899` are PASS; the promotion run required one targeted installer rerun after an external Docker Hub 502/EOF image-resolution failure.
 
-### Stage 11M — Authenticated read-only Administrator inventory API — ACTIVE
+### Stage 11M — Authenticated read-only Administrator inventory API — COMPLETED AT CP-054
 
-The roadmap explicitly includes `admins` in the Web Panel phase and names Admin/RBAC as Control Plane state. The existing `admins` table already stores a narrow authoritative non-secret inventory: ID, username, literal role string, enabled state, created timestamp and updated timestamp. This milestone exposes only those existing fields through an authenticated read-only API; it does not define role hierarchy or permission semantics.
+CP-054 exposes only the existing non-secret administrator inventory from authoritative SQLite through authenticated read-only `GET /api/admins`. The response is deterministic by ascending ID, `Cache-Control: no-store`, includes only `id`, `username`, literal `role`, `enabled`, `created_at` and `updated_at`, rejects query keys, and never serializes password hashes or admin-session material. Candidate CI `34579311752` is fully PASS across format/vet/full Go plus installer/Docker/Telemt E2E/rerun. No RBAC interpretation or mutation semantics were introduced.
 
-Scope only:
-- add an `internal/admin` read model that lists administrators deterministically by ascending ID from authoritative SQLite;
-- expose only `id`, `username`, `role`, `enabled`, `created_at` and `updated_at`; convert stored Unix timestamps to UTC RFC3339-compatible JSON times using the existing Go `time.Time` encoding contract;
-- add authenticated read-only `GET /api/admins` through the production `NewWithProxyServicesAndForcedJoin` route wiring;
-- return `Cache-Control: no-store` and an explicit `admins: []` empty result when no rows exist;
-- reject no query parameters because this bounded first inventory is unpaginated; any supplied query key is a stable `ADMIN_INVENTORY_INVALID` bad request rather than silently ignored;
-- no password hash, session token/hash, credential material or secret-derived data in the response;
-- no create/update/delete/enable/disable/password-reset/session-revoke endpoint, no role mutation, no permission evaluation, no new role names, no role hierarchy, no migration and no audit mutation wiring;
-- no Bot Admin wiring, Telegram/Telemt change, Node/Sponsor routing, reward semantics, anti-abuse policy, Docker/runtime control, backup/update/log/version semantics or new Telemt topology.
+### Next independent milestone — Web Panel read-only Administrator inventory surface
 
-Acceptance:
-- unauthenticated `GET /api/admins` returns the existing API authentication failure;
-- authenticated response is deterministic, `no-store`, exposes the six non-secret fields only and never serializes `password_hash` or admin-session material;
-- literal stored role values are reported as data only and are not interpreted as authorization policy;
-- inventory reads do not mutate `admins` or `admin_sessions`;
-- invalid query keys fail deterministically without mutation;
-- targeted `internal/admin` + `internal/httpapi` tests plus format/vet/full Go, installer/Docker prerequisites and Telemt E2E/rerun remain green.
+After CP-054 promotion/docs CI passes, inspect the established Web Panel read-only patterns and scope the smallest authenticated `/admins` surface over the CP-054 API/read model. It may display only the same six non-secret fields and literal stored role strings, with explicit safe empty state and a minimal Dashboard link. Do not add administrator mutations, role hierarchy/permission evaluation, Bot Admin wiring, audit mutation behavior or any currently blocked semantics. Update this plan with exact scope before code changes.
 
 ### Stage 11H — Bot Content runtime delivery wiring — BLOCKED ON PRODUCT SEMANTICS
 
@@ -176,10 +164,12 @@ Roadmap requires configurable daily/weekly caps, cooldowns, blacklist and suspic
 - CP-052 promotion docs `ff5856c0...` CI `34576583292` PASS.
 - Stage 11L scope docs `15c1963a...` CI `34576909346` PASS.
 - CP-053 candidate `7bcc5649...` CI `34577276205` PASS across Format, Vet, full Go tests, installer syntax/unit tests, Docker prerequisites and Telemt E2E/rerun.
+- Stage 11M scope docs `29e63643...` prepared the bounded read-only administrator inventory API scope without RBAC mutation/enforcement semantics.
+- CP-054 candidate `93d05fa0...` CI `34579311752` PASS across Format, Vet, full Go tests, installer syntax/unit tests, Docker prerequisites and Telemt E2E/rerun.
 - CP-053 promotion docs `336f6245...` CI `34577610899`: first installer attempt failed before application E2E because Docker Hub returned `502 Bad Gateway` for `golang:1.27.1-bookworm` and an image resolver returned `EOF`; targeted installer rerun job `103195352286` then PASSed installer syntax/unit, Docker prerequisites and Telemt E2E/rerun with no code change.
 - Local clone for CP-050/CP-052 targeted tests remained unavailable because the container could not resolve github.com; CP-052 staged Go files were `gofmt`-clean locally, and full GitHub CI supplied authoritative format/vet/test plus installer/Docker/Telemt verification.
 - One initial 11F `create_tree` connector call was tool-blocked before any branch move; retry succeeded with the same three staged blobs. No repository state was changed by the blocked call.
 
 ## Current next action
 
-Implement Stage 11M exactly as scoped: add the non-secret Administrator read model and authenticated `GET /api/admins`, self-review the complete diff, run/observe full required CI, and only promote a new checkpoint after all Go/installer/Docker/Telemt checks PASS. Then verify promotion/docs CI before selecting the next independent milestone. Preserve every listed blocker and do not broaden into RBAC mutation/enforcement semantics, Bot runtime composition, per-Node credential/health semantics, referral reward issuance, anti-abuse policy, Docker/runtime actions, backup/restore, update/restart, logs, version-source semantics, new Telemt topology, secret handling changes or audit mutation behavior.
+Verify CP-054 promotion/docs CI. After it passes, inspect the existing read-only page patterns and update this plan with an exact bounded Stage 11N scope for an authenticated `/admins` Web Panel over CP-054, limited to the same six non-secret fields, literal stored roles, safe empty state and minimal Dashboard navigation. Preserve every listed blocker and do not broaden into RBAC mutation/enforcement semantics, Bot runtime composition, per-Node credential/health semantics, referral reward issuance, anti-abuse policy, Docker/runtime actions, backup/restore, update/restart, logs, version-source semantics, new Telemt topology, secret handling changes or audit mutation behavior.
