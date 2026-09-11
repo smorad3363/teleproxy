@@ -19,6 +19,22 @@ panel_bind=$(read_state_value "$STATE_FILE" TPROXY_PANEL_BIND)
 admin_user=$(read_state_value "$STATE_FILE" TPROXY_ADMIN_USER)
 proxy_port=$(read_state_value "$STATE_FILE" TPROXY_PROXY_PORT 2>/dev/null || printf '443')
 
+container_running() {
+  local service=$1 label=$2 id running
+  id=$(compose ps -q "$service" 2>/dev/null || true)
+  if [[ -z "$id" ]]; then
+    printf '%s: container missing\n' "$label" >&2
+    return 1
+  fi
+  running=$(docker inspect -f '{{.State.Running}}' "$id" 2>/dev/null || true)
+  if [[ "$running" == "true" ]]; then
+    printf '%s: running\n' "$label"
+    return 0
+  fi
+  printf '%s: not running\n' "$label" >&2
+  return 1
+}
+
 proxy_health() {
   local id status
   id=$(compose ps -q telemt 2>/dev/null || true)
@@ -48,6 +64,14 @@ case "${1:-status}" in
   doctor)
     docker info >/dev/null
     failed=0
+    if compose config --quiet >/dev/null 2>&1; then
+      echo "Compose: valid"
+    else
+      echo "Compose: invalid" >&2
+      failed=1
+    fi
+    container_running control "Control container" || failed=1
+    container_running telemt "Telemt container" || failed=1
     if curl -fsS --max-time 3 "http://127.0.0.1:${panel_port}/readyz" >/dev/null; then
       echo "Control Plane: ready"
     else

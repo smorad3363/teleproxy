@@ -40,6 +40,16 @@ compose() {
     -f "$INSTALL_DIR/source/compose.yaml" "$@"
 }
 
+assert_doctor() {
+  local output
+  output=$(TPROXY_INSTALL_DIR="$INSTALL_DIR" "$TPROXY_BIN" doctor)
+  grep -F 'Compose: valid' <<<"$output" >/dev/null
+  grep -F 'Control container: running' <<<"$output" >/dev/null
+  grep -F 'Telemt container: running' <<<"$output" >/dev/null
+  grep -F 'Control Plane: ready' <<<"$output" >/dev/null
+  grep -F 'Proxy Plane: healthy' <<<"$output" >/dev/null
+}
+
 run_install "$OUT1"
 state="$INSTALL_DIR/state/install.env"
 [[ -f "$state" ]]
@@ -56,6 +66,7 @@ grep -F 'Proxy Plane:      healthy (Telemt 3.5.7)' "$OUT1" >/dev/null
 curl -fsS --max-time 3 "http://127.0.0.1:${port1}/readyz" >/dev/null
 TPROXY_INSTALL_DIR="$INSTALL_DIR" "$TPROXY_BIN" panel | grep -F "http://127.0.0.1:${port1}" >/dev/null
 TPROXY_INSTALL_DIR="$INSTALL_DIR" "$TPROXY_BIN" proxy status | grep -F 'Proxy Plane: healthy' >/dev/null
+assert_doctor
 
 # The proxy listener is public/configurable, but the Telemt Control API must not be published.
 telemt_id=$(compose ps -q telemt)
@@ -91,5 +102,6 @@ if grep -Eq '^Initial Password: [0-9a-f]{48}$' "$OUT2"; then
 fi
 curl -fsS --max-time 3 "http://127.0.0.1:${port2}/readyz" >/dev/null
 TPROXY_INSTALL_DIR="$INSTALL_DIR" "$TPROXY_BIN" proxy status | grep -F 'Proxy Plane: healthy' >/dev/null
+assert_doctor
 
 echo "installer + Telemt end-to-end rerun test: PASS"
