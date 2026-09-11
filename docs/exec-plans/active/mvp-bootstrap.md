@@ -1,12 +1,12 @@
 # MVP Bootstrap Execution Plan
 
-Status: ACTIVE
+Status: BLOCKED ON PRODUCT/RUNTIME CONTRACTS
 Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
 Latest verified code checkpoint: `229368ba6bde81f449ed1c0e91deb0c4a9d3ca46` (CP-072)
 Most recent verified code CI: `34658384988` PASS
-Current branch checkpoint: `229368ba6bde81f449ed1c0e91deb0c4a9d3ca46` (CP-072 candidate)
-Current branch CI: `34658384988` PASS
+Current branch checkpoint: `f0042698589747d228e7de1a9a8612548cdbb8de` (CP-072 promotion docs)
+Current branch CI: `34658572418` PASS
 
 Historical execution detail is preserved without deletion:
 - through CP-059 at `docs/exec-plans/archive/mvp-bootstrap-through-cp059.md`;
@@ -53,8 +53,7 @@ are repaired forward only.
   found one accidental out-of-scope persisted proxy-bind assignment regression; repaired
   forward without reset or force-push.
 - CP-071 Installer gates success on Control Docker health:
-  `ca9fcf4f605cfb10eef2db8766f14df8d3b5443b`, CI `34657708764` PASS.
-- CP-071 promotion docs:
+  `ca9fcf4f605cfb10eef2db8766f14df8d3b5443b`, CI `34657708764` PASS; promotion
   `63fc78dee63f02265b76dcf3c9522fa8b1c11a49`, CI `34657897001` PASS.
 - Stage 12H scope docs:
   `935c9bb3ce2824a5b4dcb37e5aa1cb9bbfaafd48`, CI `34658114344` PASS.
@@ -63,6 +62,9 @@ are repaired forward only.
   Vet, explicit SQLite migration tests, full Go tests, ShellCheck, installer syntax/unit
   tests, Docker prerequisites, Docker build, Compose config validation, and installer/
   Telemt E2E install/rerun.
+- CP-072 promotion docs:
+  `f0042698589747d228e7de1a9a8612548cdbb8de`, CI `34658572418` PASS across every
+  established gate.
 
 ## Explicit blockers
 
@@ -94,34 +96,30 @@ install/rerun. Do not invent a targeted-integration selector, secret scanner con
 dependency scanner/version policy, target-distro harness, or upgrade/rollback smoke
 before those contracts exist.
 
-## Stage 12F — Control image Docker readiness healthcheck — COMPLETED AT CP-070
+## Recovery/health milestones completed
 
-CP-070 established a first-class Control Docker health contract using the existing
+### Stage 12F / CP-070 — Control Docker readiness healthcheck
+
+The Control image has a first-class Docker health contract using the existing
 unauthenticated `/readyz` database-readiness endpoint and the built-in
-`teleproxy-control healthcheck <http-url>` process mode. Compose restart policy remains
-independent for Control and Telemt.
+`teleproxy-control healthcheck <http-url>` process mode. Control and Telemt keep
+independent restart/lifecycle policies.
 
-## Stage 12G — Installer gates success on Control Docker health — COMPLETED AT CP-071
+### Stage 12G / CP-071 — Installer gates success on Control Docker health
 
 After direct Control `/readyz` succeeds, the host installer waits boundedly for the
 Control container Docker health status to become exactly `healthy` before the independent
 Telemt health gate and before installation success. The final scoped diff is exactly
 `scripts/install-host.sh` (+24 lines).
 
-## Stage 12H — `tproxy doctor` requires Control Docker health — COMPLETED AT CP-072
+### Stage 12H / CP-072 — `tproxy doctor` requires Control Docker health
 
-CP-072 extends the established installation-health view without adding a new protocol.
-`tproxy doctor` now resolves the Control container and reads only its existing Docker
-`.State.Health.Status`, printing the stable line `Control Docker health: <status>` and
-requiring exactly `healthy` for success. Missing container/health, non-healthy status, or
-inspect failure makes doctor fail. Existing Compose validation, both-container running
-checks, direct Control `/readyz`, and Telemt Docker-health checks remain unchanged.
+`tproxy doctor` now reports `Control Docker health: <status>` from the existing Docker
+health object and succeeds on that check only for exactly `healthy`. Existing Compose,
+running-container, direct `/readyz`, and Telemt health checks remain intact. Installer
+E2E asserts the healthy line after first install and rerun.
 
-Installer E2E now asserts `Control Docker health: healthy` through the existing doctor
-path after both first install and rerun. No Docker health logs, URLs, tokens, credentials
-or secrets are printed by the new path.
-
-The final scoped code diff contains exactly:
+The final CP-072 code diff contains exactly:
 - `bin/tproxy` (+13 lines)
 - `tests/installer_e2e.sh` (+1 assertion)
 
@@ -129,26 +127,38 @@ No restart/watchdog action, restart-loop state, notification, Compose `depends_o
 schema/migration/API/topology, secret-persistence, or Control/Telemt lifecycle-coupling
 change was added.
 
-Stage 12H scope `935c9bb3ce2824a5b4dcb37e5aa1cb9bbfaafd48` passed CI
-`34658114344`; CP-072 `229368ba6bde81f449ed1c0e91deb0c4a9d3ca46` passed CI
-`34658384988` across every established gate.
+## Post-CP-072 roadmap/repository review — NO FURTHER SAFE INDEPENDENT MILESTONE
 
-## Blocked items preserved
+The repository now covers the contract-defined recovery primitives that can be added
+without inventing product/runtime behavior: independent Compose restart policies,
+Control and Telemt Docker healthchecks, bounded installer health verification for both
+planes, direct Control readiness verification, `tproxy doctor` visibility for both
+container-running state and both Docker health signals, and graceful Control shutdown.
 
-The remaining product/reliability work still lacks complete contracts:
-- watchdog repeated-failure/restart-loop threshold, durable degraded-state semantics and
-  admin-notification transport;
-- Bot Content composition/fallback/missing-slot semantics;
-- per-Node health/test credential/runtime endpoint contract;
-- referral reward recipient and anti-abuse defaults;
-- Node/Sponsor routing, RBAC enforcement, backup/restore, update/rollback/version source,
-  Dashboard metrics, secret persistence, and new Telemt topology;
-- remaining CI scanner/matrix/upgrade tooling and acceptance contracts.
+The recursive repository tree contains no host watchdog or backup implementation scaffold
+whose missing behavior can be completed mechanically. The reliability contract says a
+watchdog must avoid restart loops and degrade after repeated failures, but it does not
+define the repeated-failure threshold/cadence, durable loop-state location, restart
+budget, or admin-notification transport. Implementing that now would invent runtime
+semantics.
+
+Backup/update/rollback likewise remain intentionally blocked: the docs describe required
+properties, but the repository has no selected backup snapshot/retention/restore command
+contract, version source, update artifact/checksum source, activation/rollback state
+model, or CLI/operator semantics. Those choices affect persistent state and rollback and
+must not be guessed.
+
+The remaining product milestones are the explicit blockers above. The remaining CI
+recommendations also lack repository-selected tools, versions, policies and acceptance
+thresholds. Therefore no further code milestone is safely scopeable from the current
+roadmap/repository contracts.
 
 ## Current next action
 
-Require full CI PASS on this CP-072 promotion docs commit. Then re-check the roadmap and
-repository for another independent milestone whose semantics are already established.
-If none remains, record a recovery-safe blocked state rather than invent product/runtime
-contracts. Preserve every architecture invariant, explicit blocker and lifecycle
-boundary above.
+This branch is recovery-safe and intentionally blocked on missing product/runtime/tooling
+contracts, not on an unfinished contract-defined implementation. On resume, read the true
+branch HEAD and this plan from that exact HEAD, inspect every later commit/diff/CI, and
+repair any partial work forward. If there is no newer work, continue only when one of the
+blocked contracts is explicitly established in the repository or by product/runtime
+decision. Scope one blocker at a time and require scope CI, code CI, and promotion CI
+before moving to the next milestone.
