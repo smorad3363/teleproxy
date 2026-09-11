@@ -29,6 +29,9 @@ jobs:
       - name: Vet
         run: go vet ./...
 
+      - name: SQLite migration tests
+        run: go test ./internal/database -run '^(TestOpenAppliesSQLiteInvariantsAndMigrations|TestMigrate.*)$'
+
       - name: Test
         run: go test ./...
 
