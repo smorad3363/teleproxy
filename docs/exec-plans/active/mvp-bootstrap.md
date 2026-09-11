@@ -5,8 +5,8 @@ Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
 Latest verified code checkpoint: `046d487f38ebbbe30ba8dd753ce728f781042b04` (CP-062)
 Most recent verified code CI: `34620300934` PASS
-Current branch checkpoint: `046d487f38ebbbe30ba8dd753ce728f781042b04` (CP-062 candidate)
-Current branch CI: `34620300934` PASS
+Current branch checkpoint: `a5fcc2db68c38987231e22d453b5106ebfd19ac8` (CP-062 promotion docs)
+Current branch CI: `34620702411` PASS
 
 Historical execution detail through CP-059 is preserved byte-for-byte at
 `docs/exec-plans/archive/mvp-bootstrap-through-cp059.md`, using the prior active-plan
@@ -57,6 +57,8 @@ was published.
   `046d487f38ebbbe30ba8dd753ce728f781042b04`, CI `34620300934` PASS across Format,
   Vet, full Go tests, installer syntax/unit tests, Docker prerequisites, and Telemt
   E2E/rerun.
+- CP-062 promotion docs:
+  `a5fcc2db68c38987231e22d453b5106ebfd19ac8`, CI `34620702411` PASS.
 
 ## Explicit blockers
 
@@ -126,9 +128,49 @@ no-store/read-only and regression coverage verifies exact filtering, independent
 status composition, bounded pagination, invalid-query rejection, and no authoritative
 state mutation.
 
+## Stage 12A — Management CLI doctor Compose/container checks — ACTIVE
+
+Scope is limited to strengthening the existing host-side `tproxy doctor` command with
+checks whose semantics are already fixed by the installer and Compose topology.
+
+The command must preserve its existing Docker daemon check, Control Plane `/readyz`
+check, and existing `proxy_health` behavior. It additionally validates the installed
+Compose configuration with the same project/env/file inputs already used by `compose()`,
+and verifies that both expected Compose services (`control` and `telemt`) have a
+container and that each container is running.
+
+For `control`, running-container state and the existing `/readyz` request remain
+separate checks: the image does not define a Docker healthcheck, while `/readyz` already
+checks Control Plane database readiness. For `telemt`, the existing `proxy_health`
+check remains authoritative for healthy proxy state; the added container-running check
+does not replace or weaken it.
+
+Failures must produce bounded, non-secret diagnostics and a non-zero doctor exit. The
+command must not print state-file contents, secret-file contents, tokens, passwords,
+internal Telemt credentials, or raw Docker inspect dumps. Existing `status`, `logs`,
+`restart`, `start`, `stop`, `proxy`, `config`, and `panel` command behavior is unchanged.
+
+Regression coverage is limited to the existing installer E2E path: after a successful
+install and again after the rerun, `tproxy doctor` must succeed and expose the bounded
+Compose/container/readiness/proxy-health labels. No new daemon, migration, endpoint,
+backup/update/rollback, watchdog, Node health, Bot connectivity, DNS, disk, clock, or
+repair semantics are introduced in this milestone.
+
+### Acceptance
+
+- `doctor` fails if Docker daemon access fails (existing behavior).
+- `doctor` validates Compose configuration and reports a bounded `Compose: valid` line.
+- `doctor` verifies `control` and `telemt` containers exist and are running.
+- `doctor` still requires Control Plane `/readyz` and existing healthy Proxy Plane.
+- Installer E2E invokes `doctor` on first install and rerun and checks the expected
+  bounded output.
+- No secrets/state dump is added, no unrelated CLI command semantics change, and full
+  CI passes.
+
 ## Current next action
 
-Promote CP-062 documentation only and require full CI PASS. Then inspect the roadmap
-and current repository contracts for the next semantics-established bounded milestone.
-Preserve Credit Buckets as source of truth and every blocker above; do not invent
-missing product/runtime semantics.
+Publish this Stage 12A scope as a plan-only commit and require full CI PASS. Then
+implement only the bounded `tproxy doctor` Compose/container checks above, self-review
+the CLI/test diff, and require full CI again before checkpoint promotion. Preserve all
+explicit blockers and do not broaden doctor into backup/update/repair or product-level
+health semantics.
