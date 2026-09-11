@@ -12,6 +12,7 @@ func (s *Server) registerUserAdminRoutes() {
 	s.mux.HandleFunc("GET /users", s.handleUserAdminPage)
 	s.mux.HandleFunc("GET /api/users", s.handleUserAdminList)
 	s.registerAuditLogRoutes()
+	s.registerAdminInventoryRoutes()
 }
 
 func (s *Server) handleUserAdminList(w http.ResponseWriter, r *http.Request) {
