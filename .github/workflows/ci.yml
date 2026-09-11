@@ -39,6 +39,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      - name: ShellCheck
+        run: shellcheck install.sh scripts/install_lib.sh scripts/install-host.sh bin/tproxy tests/installer_lib_test.sh tests/installer_e2e.sh
+
       - name: Installer syntax and unit tests
         run: |
           bash -n install.sh scripts/install_lib.sh scripts/install-host.sh bin/tproxy tests/installer_lib_test.sh tests/installer_e2e.sh
