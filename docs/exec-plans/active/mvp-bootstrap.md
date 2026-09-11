@@ -5,6 +5,8 @@ Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
 Latest verified code checkpoint: `8993aee8b9d980990504fe25261eb4c29879316e` (CP-061)
 Most recent verified code CI: `34615741067` PASS
+Current branch checkpoint: `a440758caf316d41d50e9f9bb8ce6b70d93ef42e` (CP-061 promotion docs)
+Current branch CI: `34616097813` PASS
 
 Historical execution detail through CP-059 is preserved byte-for-byte at
 `docs/exec-plans/archive/mvp-bootstrap-through-cp059.md`, using the prior active-plan
@@ -34,12 +36,6 @@ was published.
 
 ## Current verified checkpoints
 
-- CP-059 Web Panel authoritative User exact filters:
-  `c702bec933eed9a86676a36149a246526ffd1753`, CI `34607269536` PASS.
-- CP-059 promotion docs:
-  `49f9b302b9ad911ccfb503040611d2bd8ea4f0aa`, CI `34608286970` PASS.
-- Stage 11S scope docs:
-  `6660951628ac191b46199930899b29a0fddb5ce6`, CI `34612807650` PASS.
 - CP-060 Settings established referral reward configuration surface:
   `f038c8b266c66b9378d26547c7c4ab4a68e45de6`, CI `34613204935` PASS.
 - CP-060 promotion docs:
@@ -48,6 +44,8 @@ was published.
   `ad308e646c3f2a2bf1c3d7e3d378f4ca1e601b88`, CI `34614212190` PASS.
 - CP-061 Referral history authoritative exact status filter:
   `8993aee8b9d980990504fe25261eb4c29879316e`, CI `34615741067` PASS.
+- CP-061 promotion docs:
+  `a440758caf316d41d50e9f9bb8ce6b70d93ef42e`, CI `34616097813` PASS.
 
 ## Explicit blockers
 
@@ -75,52 +73,70 @@ semantics, audit mutation/redaction wiring, Administrator RBAC enforcement,
 backup/restore, update/restart/log/version-source semantics, Dashboard metrics, new
 Telemt topology, or secret persistence.
 
-## Stage 11S — Settings established referral reward configuration surface — COMPLETED AT CP-060
-
-CP-060 extends authenticated `GET /settings` with the already-established referral
-reward bytes and expiry days and reuses the existing CSRF-protected
-`PUT /api/referral/reward-settings` contract. Browser handling preserves exact
-positive int64 decimal text and GET remains no-store/read-only. No reward
-recipient/issuance/anti-abuse semantics were added.
-
 ## Stage 11T — Referral history authoritative exact status filter — COMPLETED AT CP-061
 
-CP-061 extends only existing authenticated `GET /api/referral/history` and
-`GET /referrals` reads with one optional exact `status` filter over authoritative
-`referral_attributions.status`.
+CP-061 extends only existing authenticated referral-history reads with an optional
+exact `status` filter accepting the already-established `pending`, `rewarded`, and
+`rejected` constants. It preserves no-store/read-only behavior and bounded newest-first
+pagination. No reward or anti-abuse write semantics were added.
 
-Accepted values are exactly the established constants `pending`, `rewarded`, and
-`rejected`. The domain read model validates the filter, applies exact
-`ra.status = ?`, composes it with optional `before_id` using logical AND, and
-preserves newest-first bounded pagination.
+## Stage 11U — Referral history authoritative exact rejection-reason filter — ACTIVE
 
-The HTTP parser rejects empty, duplicate, unknown, differently-cased, or otherwise
-invalid status values with the existing `REFERRAL_HISTORY_INVALID` Problem contract.
-The `/referrals` page offers only All/Pending/Rewarded/Rejected. Selecting All omits
-the status query parameter; active status and explicit limit are retained in Older
-referrals pagination.
+Scope is limited to extending the existing authenticated `GET /api/referral/history`
+and `GET /referrals` read contracts with one optional, single-value exact
+`rejection_reason` filter over the already-stored
+`referral_attributions.rejection_reason` field.
 
-The candidate changes exactly:
-- `internal/referral/history.go`
-- `internal/httpapi/referral_history.go`
-- `internal/httpapi/referral_page.go`
-- `internal/referral/history_status_filter_test.go`
-- `internal/httpapi/referral_history_status_filter_test.go`
-- `internal/httpapi/referral_page_status_filter_test.go`
+Accepted values are exactly the six already-established `referral.RejectionReason`
+constants:
 
-No endpoint, migration, write path, rejection-reason filter, suspicious-referral
-classification, anti-abuse policy, reward recipient/issuance,
-eligibility/finalization mutation, referral tree or user-scoped filtering,
-assignment/routing, audit wiring, Bot runtime behavior, per-Node credentials/health,
-Telemt topology, or secret persistence was added.
+- `anti_abuse`
+- `daily_cap`
+- `weekly_cap`
+- `cooldown`
+- `blacklist`
+- `suspicious`
 
-Candidate `8993aee8b9d980990504fe25261eb4c29879316e`, CI `34615741067` PASS across
-Format, Vet, full Go tests, installer syntax/unit tests, Docker prerequisites, and
-Telemt E2E/rerun.
+No new rejection reason, fraud score, cap, cooldown rule, blacklist meaning, or
+suspicious-classification logic is introduced. This milestone only lets an admin read
+records that already carry one of those stored reasons.
+
+`referral.HistoryQuery` may carry the exact rejection reason. The read model validates
+a non-empty filter against the six existing constants and applies
+`ra.rejection_reason = ?`. It composes independently with optional `status` and
+`before_id` using logical AND. It must not infer `status=rejected` when a rejection
+reason is supplied; contradictory filters simply return an empty read result.
+Newest-first ID ordering, `limit + 1` pagination, stored fields, and read-only behavior
+remain unchanged.
+
+The HTTP parser may additionally accept one `rejection_reason` query value. Empty,
+duplicate, unknown, differently-cased, or otherwise invalid values continue to use
+the existing `REFERRAL_HISTORY_INVALID` Problem contract.
+
+The `/referrals` page adds a minimal GET rejection-reason selector containing All plus
+only those six established values. Choosing All omits the query parameter. Active
+`status`, active `rejection_reason`, and explicit `limit` are retained in Older
+referrals pagination. Existing reward settings and status filtering remain unchanged.
+
+No endpoint, migration, write path, anti-abuse policy, suspicious scoring, reward
+recipient/issuance, eligibility/finalization mutation, referral tree, inviter/invitee
+user-scoped filtering, assignment/routing, audit wiring, Bot behavior, per-Node
+credentials/health, Telemt topology, or secret persistence is introduced.
+
+### Acceptance
+
+- Domain filtering returns only the exact requested stored rejection reason.
+- `rejection_reason` composes with `status` and `before_id` without inferred status.
+- API accepts only one exact established rejection reason and rejects empty,
+  duplicate, unknown, and differently-cased values with `REFERRAL_HISTORY_INVALID`.
+- `/referrals` renders only All plus the six established reason choices and preserves
+  active filters plus explicit limit in Older referrals links.
+- Unfiltered and status-only API/page behavior remains unchanged.
+- GET remains no-store/read-only; focused domain/API/page tests and full CI pass.
 
 ## Current next action
 
-Promote CP-061 documentation only and require full CI PASS. Then inspect the roadmap
-and current repository contracts for the next semantics-established bounded milestone.
-Preserve Credit Buckets as source of truth and every blocker above; do not invent
-missing product/runtime semantics.
+Publish this Stage 11U scope as a plan-only commit and require full CI PASS. Then
+implement only the authoritative exact rejection-reason filter described above,
+self-review the bounded diff, and require full CI again before checkpoint promotion.
+Preserve Credit Buckets as source of truth and every blocker above.
