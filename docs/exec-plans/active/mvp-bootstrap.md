@@ -1,12 +1,12 @@
 # MVP Bootstrap Execution Plan
 
-Status: BLOCKED ON PRODUCT CONTRACTS
+Status: ACTIVE
 Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
 Latest verified code checkpoint: `fa88c94b6ec654035a7fa086319542322ad5003e` (CP-070)
 Most recent verified code CI: `34650289404` PASS
-Current branch checkpoint: `59e34aa2d565ecf2cb7cae7a7f5fd286a4457f44` (CP-070 promotion docs)
-Current branch CI: `34650530913` PASS
+Current branch checkpoint: `ff8fde54441bc630ca964fd2dce493f8c3486ee2` (post-CP-070 recovery docs)
+Current branch CI: `34653782213` PASS
 
 Historical execution detail is preserved without deletion:
 - through CP-059 at `docs/exec-plans/archive/mvp-bootstrap-through-cp059.md`;
@@ -62,6 +62,9 @@ forward only.
   rerun.
 - CP-070 promotion docs:
   `59e34aa2d565ecf2cb7cae7a7f5fd286a4457f44`, CI `34650530913` PASS across every
+  established gate.
+- Post-CP-070 recovery docs:
+  `ff8fde54441bc630ca964fd2dce493f8c3486ee2`, CI `34653782213` PASS across every
   established gate.
 
 ## Explicit blockers
@@ -149,12 +152,13 @@ passed CI `34649791579`. Candidate and CP-070 checkpoint
 `fa88c94b6ec654035a7fa086319542322ad5003e` passed CI `34650289404` across every
 established gate, including the new installed-Control Docker health assertion. Promotion
 docs `59e34aa2d565ecf2cb7cae7a7f5fd286a4457f44` passed CI `34650530913` across every
-established gate.
+established gate. Recovery docs `ff8fde54441bc630ca964fd2dce493f8c3486ee2`
+passed CI `34653782213` across every established gate.
 
-## Post-CP-070 roadmap review — BLOCKED / NO SAFE INDEPENDENT MILESTONE
+## Post-CP-070 roadmap review — BLOCKED ITEMS PRESERVED
 
-The remaining MVP/reliability work is not safely implementable from current repository
-contracts without inventing behavior. In particular:
+The remaining product/reliability work below is not safely implementable from current
+repository contracts without inventing behavior:
 - watchdog behavior requires a concrete repeated-failure/restart-loop threshold, durable
   degraded-state semantics, and admin-notification contract before adding host actions;
 - Bot Content runtime delivery still lacks composition/fallback/missing-slot semantics;
@@ -167,16 +171,42 @@ contracts without inventing behavior. In particular:
 - remaining CI recommendations lack repository-selected tooling/acceptance contracts as
   recorded above.
 
-The roadmap's Docker-healthcheck requirement was independently satisfiable and is now
-closed at CP-070. No further product/runtime code should be written until one of the
-contracts above becomes repository-defined or explicitly established.
+## Stage 12G — Installer gates success on Control Docker health — SCOPED
+
+CP-070 established a first-class Docker health contract for the Control image and the
+installer E2E already verifies that contract after an install returns. The host installer
+itself currently waits for direct `/readyz`, but unlike Telemt it does not require the
+Control container's Docker health status to become `healthy` before printing success,
+marking install state `installed`, deleting the one-time bootstrap password file, and
+removing the retained previous source.
+
+Stage 12G closes only that installer gating gap. After the existing direct `/readyz`
+check succeeds, `scripts/install-host.sh` must resolve the Control container and wait
+boundedly for its Docker health status to become exactly `healthy`. Missing container,
+missing health status, unhealthy state, or timeout must fail before the installer records
+a successful installation. The existing direct `/readyz` check remains separate, and the
+existing Telemt health gate remains independent and unchanged.
+
+The implementation scope is exactly:
+- `scripts/install-host.sh`
+
+Acceptance constraints:
+- use the already-established Control Docker healthcheck; add no second health protocol;
+- keep the wait bounded and consistent with the existing 60-attempt installer/E2E health
+  waits;
+- do not add Compose `depends_on` or couple Control and Telemt lifecycle;
+- do not change schema, migrations, product/API behavior, ports, topology, credentials,
+  or secret persistence;
+- the new Control Docker-health failure path may report only final container/health
+  status plus ordinary `compose ps`, and must not print Docker health logs, URLs, tokens,
+  or secrets;
+- existing installer E2E first-install and rerun flows must traverse the new gate and all
+  established CI gates must pass.
 
 ## Current next action
 
-This branch is recovery-safe and blocked on missing product/tooling contracts rather than
-on an unfinished implementation. On resume, first read the true branch HEAD and this
-plan from that exact HEAD, inspect every later commit/diff/CI, and forward-repair any
-new partial work. If there is no newer work, do not invent semantics: continue only when
-a previously blocked contract or a new independent roadmap milestone is concretely
-specified. Preserve every architecture invariant, explicit blocker, and lifecycle
+Require full CI PASS on this Stage 12G scope-only commit. Then change only
+`scripts/install-host.sh`, run the full established CI, and promote CP-071 only after all
+gates pass. After CP-071 promotion, re-check the roadmap/repository for another
+independent contract-defined milestone; preserve every explicit blocker and lifecycle
 boundary above.
