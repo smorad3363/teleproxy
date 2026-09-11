@@ -3,10 +3,10 @@
 Status: ACTIVE
 Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
-Latest verified code checkpoint: `fa88c94b6ec654035a7fa086319542322ad5003e` (CP-070)
-Most recent verified code CI: `34650289404` PASS
-Current branch checkpoint: `ff8fde54441bc630ca964fd2dce493f8c3486ee2` (post-CP-070 recovery docs)
-Current branch CI: `34653782213` PASS
+Latest verified code checkpoint: `ca9fcf4f605cfb10eef2db8766f14df8d3b5443b` (CP-071)
+Most recent verified code CI: `34657708764` PASS
+Current branch checkpoint: `ca9fcf4f605cfb10eef2db8766f14df8d3b5443b` (CP-071 candidate)
+Current branch CI: `34657708764` PASS
 
 Historical execution detail is preserved without deletion:
 - through CP-059 at `docs/exec-plans/archive/mvp-bootstrap-through-cp059.md`;
@@ -21,8 +21,8 @@ file diff, and CI result before writing. Repair an active partial milestone firs
 Never reset, clean, force-push, or overwrite unrelated work. If connector-side staging
 is interrupted before an atomic branch move, re-read HEAD and this plan and reconstruct
 from current HEAD plus the verified intended diff. Unreachable Git objects are not
-published branch state. Failed candidates remain historical evidence and are repaired
-forward only.
+published branch state. Failed or superseded candidates remain historical evidence and
+are repaired forward only.
 
 ## Non-negotiable architecture
 
@@ -55,17 +55,23 @@ forward only.
 - Stage 12F scope docs:
   `0ec8a0ca48fe1b5254e978f5fc11b4f6da16d185`, CI `34649791579` PASS.
 - CP-070 Control image Docker readiness healthcheck:
-  `fa88c94b6ec654035a7fa086319542322ad5003e`, CI `34650289404` PASS across Format,
+  `fa88c94b6ec654035a7fa086319542322ad5003e`, CI `34650289404` PASS across every
+  established gate.
+- CP-070 promotion docs:
+  `59e34aa2d565ecf2cb7cae7a7f5fd286a4457f44`, CI `34650530913` PASS.
+- Post-CP-070 recovery docs:
+  `ff8fde54441bc630ca964fd2dce493f8c3486ee2`, CI `34653782213` PASS.
+- Stage 12G scope docs:
+  `488bfd52ee7dd4f3c3f6dd326f946eae66ff250e`, CI `34657412890` PASS.
+- Stage 12G first candidate:
+  `a304b7758566284b2d9fdcbe7462b945dfed6e1d`, CI `34657664813` PASS, but self-review
+  found one accidental out-of-scope reconstruction regression in persisted proxy-bind
+  assignment. The branch was repaired forward without reset or force-push.
+- CP-071 Installer gates success on Control Docker health:
+  `ca9fcf4f605cfb10eef2db8766f14df8d3b5443b`, CI `34657708764` PASS across Format,
   Vet, explicit SQLite migration tests, full Go tests, ShellCheck, installer syntax/unit
   tests, Docker prerequisites, Docker build, Compose config validation, and installer/
-  Telemt E2E/rerun including the Control Docker healthy assertion after first install and
-  rerun.
-- CP-070 promotion docs:
-  `59e34aa2d565ecf2cb7cae7a7f5fd286a4457f44`, CI `34650530913` PASS across every
-  established gate.
-- Post-CP-070 recovery docs:
-  `ff8fde54441bc630ca964fd2dce493f8c3486ee2`, CI `34653782213` PASS across every
-  established gate.
+  Telemt E2E install/rerun.
 
 ## Explicit blockers
 
@@ -115,52 +121,51 @@ The final code diff contains exactly:
 
 ## Stage 12F — Control image Docker readiness healthcheck — COMPLETED AT CP-070
 
-CP-070 closes the roadmap's established Docker-healthcheck gap for the Control image
-without adding a shell or HTTP utility to the runtime image. The Control binary now has
-a local process mode:
-`teleproxy-control healthcheck <http-url>`.
+CP-070 established the Control image's first-class Docker health contract using the
+existing unauthenticated `/readyz` database-readiness endpoint and a built-in
+`teleproxy-control healthcheck <http-url>` process mode. Installer E2E verifies the
+installed Control container becomes Docker `healthy` after first install and rerun.
 
-That mode performs one HTTP GET with a 3-second client timeout, refuses non-HTTP URLs
-and URL userinfo, does not follow redirects, accepts only HTTP 200, drains at most 4096
-response bytes, never prints a response body or requested URL, and returns non-zero for
-transport, timeout, redirect, malformed command, or non-200 failure. With no command
-arguments, normal Control Plane startup is unchanged.
+No watchdog action, restart-loop detection, admin notification, update/rollback, backup,
+Node health, Telemt image/topology, migration/schema, product endpoint, or cross-plane
+lifecycle coupling was added.
 
-The Control Docker image now defines:
-`HEALTHCHECK ... CMD ["/usr/local/bin/teleproxy-control", "healthcheck", "http://127.0.0.1:8080/readyz"]`.
-It reuses the existing unauthenticated `/readyz` database-readiness contract and adds no
-curl, wget, shell, token, secret, external request, package, or network exposure.
+## Stage 12G — Installer gates success on Control Docker health — COMPLETED AT CP-071
 
-Installer E2E resolves the installed Control container ID and waits boundedly for Docker
-health status `healthy` after first install and rerun. On failure it reports only final
-container/health status, not Docker health logs. Existing direct `/readyz`, `tproxy
-doctor`, and Proxy Plane checks remain separate and intact.
+CP-071 closes the remaining installer-side gap in the roadmap's Docker-healthcheck
+requirement. After the existing direct Control `/readyz` check succeeds, the host
+installer now resolves the Control container and waits up to the existing bounded
+60-attempt window for Docker health status to become exactly `healthy` before continuing
+to the independently existing Telemt health gate and before reporting a successful
+installation.
 
-The final scoped code diff contains exactly:
-- `cmd/control/main.go`
-- `cmd/control/healthcheck.go`
-- `cmd/control/healthcheck_test.go`
-- `Dockerfile`
-- `tests/installer_e2e.sh`
+If the Control container is missing, has no health status, remains non-healthy, or times
+out, the installer fails while state is still `prepared`. The failure path prints only the
+final container/health status and ordinary `compose ps`; it does not print Docker health
+logs, requested URLs, tokens, or secrets. The existing direct `/readyz` failure behavior
+and the existing Telemt health gate are unchanged.
 
-No watchdog restart action, restart-loop detection, admin notification, update/rollback,
-backup, Node health, Telemt image/topology, migration/schema, product endpoint, or
-cross-plane lifecycle coupling was added.
+The final scoped code diff relative to Stage 12G scope contains exactly:
+- `scripts/install-host.sh` (+24 lines, no unrelated final diff).
 
-Stage 12F scope docs `0ec8a0ca48fe1b5254e978f5fc11b4f6da16d185`
-passed CI `34649791579`. Candidate and CP-070 checkpoint
-`fa88c94b6ec654035a7fa086319542322ad5003e` passed CI `34650289404` across every
-established gate, including the new installed-Control Docker health assertion. Promotion
-docs `59e34aa2d565ecf2cb7cae7a7f5fd286a4457f44` passed CI `34650530913` across every
-established gate. Recovery docs `ff8fde54441bc630ca964fd2dce493f8c3486ee2`
-passed CI `34653782213` across every established gate.
+No Compose `depends_on`, schema/migration, product/API, port/topology, credential,
+secret-persistence, watchdog, update/rollback, backup, Node health, or Control/Telemt
+lifecycle-coupling change was added.
 
-## Post-CP-070 roadmap review — BLOCKED ITEMS PRESERVED
+Stage 12G scope docs `488bfd52ee7dd4f3c3f6dd326f946eae66ff250e` passed CI
+`34657412890`. The first code candidate `a304b7758566284b2d9fdcbe7462b945dfed6e1d`
+passed CI `34657664813`, but self-review found an accidental persisted-proxy-bind
+assignment regression introduced while reconstructing the full shell file. Forward repair
+`ca9fcf4f605cfb10eef2db8766f14df8d3b5443b` restores that line, leaves only the intended
+24-line Control-health gate diff, and passed CI `34657708764` across every established
+gate.
+
+## Post-CP-071 roadmap review — BLOCKED ITEMS PRESERVED
 
 The remaining product/reliability work below is not safely implementable from current
 repository contracts without inventing behavior:
-- watchdog behavior requires a concrete repeated-failure/restart-loop threshold, durable
-  degraded-state semantics, and admin-notification contract before adding host actions;
+- watchdog behavior still lacks a concrete repeated-failure/restart-loop threshold,
+  durable degraded-state semantics, and admin-notification transport/contract;
 - Bot Content runtime delivery still lacks composition/fallback/missing-slot semantics;
 - per-Node health/test still lacks its credential/runtime endpoint contract;
 - referral reward issuance still lacks the reward recipient contract;
@@ -171,42 +176,14 @@ repository contracts without inventing behavior:
 - remaining CI recommendations lack repository-selected tooling/acceptance contracts as
   recorded above.
 
-## Stage 12G — Installer gates success on Control Docker health — SCOPED
-
-CP-070 established a first-class Docker health contract for the Control image and the
-installer E2E already verifies that contract after an install returns. The host installer
-itself currently waits for direct `/readyz`, but unlike Telemt it does not require the
-Control container's Docker health status to become `healthy` before printing success,
-marking install state `installed`, deleting the one-time bootstrap password file, and
-removing the retained previous source.
-
-Stage 12G closes only that installer gating gap. After the existing direct `/readyz`
-check succeeds, `scripts/install-host.sh` must resolve the Control container and wait
-boundedly for its Docker health status to become exactly `healthy`. Missing container,
-missing health status, unhealthy state, or timeout must fail before the installer records
-a successful installation. The existing direct `/readyz` check remains separate, and the
-existing Telemt health gate remains independent and unchanged.
-
-The implementation scope is exactly:
-- `scripts/install-host.sh`
-
-Acceptance constraints:
-- use the already-established Control Docker healthcheck; add no second health protocol;
-- keep the wait bounded and consistent with the existing 60-attempt installer/E2E health
-  waits;
-- do not add Compose `depends_on` or couple Control and Telemt lifecycle;
-- do not change schema, migrations, product/API behavior, ports, topology, credentials,
-  or secret persistence;
-- the new Control Docker-health failure path may report only final container/health
-  status plus ordinary `compose ps`, and must not print Docker health logs, URLs, tokens,
-  or secrets;
-- existing installer E2E first-install and rerun flows must traverse the new gate and all
-  established CI gates must pass.
+CP-071 completes the second independently contract-defined recovery/health primitive
+found in the roadmap review: installer success is now gated on the Control Docker health
+contract established by CP-070.
 
 ## Current next action
 
-Require full CI PASS on this Stage 12G scope-only commit. Then change only
-`scripts/install-host.sh`, run the full established CI, and promote CP-071 only after all
-gates pass. After CP-071 promotion, re-check the roadmap/repository for another
-independent contract-defined milestone; preserve every explicit blocker and lifecycle
+Require full CI PASS on this CP-071 promotion docs commit. Then re-check the roadmap and
+repository for another independent milestone whose semantics are already established.
+If none remains, record a recovery-safe blocked state rather than invent product/runtime
+contracts. Preserve every architecture invariant, explicit blocker, and lifecycle
 boundary above.
