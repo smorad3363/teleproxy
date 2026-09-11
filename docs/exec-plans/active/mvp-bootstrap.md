@@ -3,8 +3,8 @@
 Status: ACTIVE
 Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
-Latest verified code checkpoint: `f038c8b266c66b9378d26547c7c4ab4a68e45de6` (CP-060)
-Most recent verified code CI: `34613204935` PASS
+Latest verified code checkpoint: `8993aee8b9d980990504fe25261eb4c29879316e` (CP-061)
+Most recent verified code CI: `34615741067` PASS
 
 Historical execution detail through CP-059 is preserved byte-for-byte at
 `docs/exec-plans/archive/mvp-bootstrap-through-cp059.md`, using the prior active-plan
@@ -34,14 +34,6 @@ was published.
 
 ## Current verified checkpoints
 
-- CP-057 Web Panel established proxy lifecycle actions:
-  `c8ba6e27de8153e6907e53e3eb813026728d0203`, CI `34596564418` PASS.
-- CP-058 Web Panel manual quota reconciliation:
-  `cbb4ac3a22a18332a74972270ae46a74c381f80d`, CI `34601789910` PASS.
-- CP-058 promotion docs: `40ce8e433e3f296be210cccfb154d8705c73d323`,
-  CI `34602626633` PASS.
-- Stage 11R scope docs: `deb5bda3de2e49bcbbb835e4a088d69934b44274`,
-  CI `34606209209` PASS.
 - CP-059 Web Panel authoritative User exact filters:
   `c702bec933eed9a86676a36149a246526ffd1753`, CI `34607269536` PASS.
 - CP-059 promotion docs:
@@ -52,22 +44,17 @@ was published.
   `f038c8b266c66b9378d26547c7c4ab4a68e45de6`, CI `34613204935` PASS.
 - CP-060 promotion docs:
   `e32525cfdccf64d0bff9b87e489d3fdace2fa7ed`, CI `34613627486` PASS.
-
-CP-059 extends only existing authenticated `GET /api/users` and `GET /users` with
-optional exact `telegram_id` and `proxy_username` filters over authoritative SQLite.
-The filters compose with logical AND. Malformed, duplicate, non-positive/non-integer
-Telegram IDs, invalid proxy usernames, and unknown query keys use the existing
-`USER_INVENTORY_INVALID` Problem contract. Matching is exact and case-sensitive;
-there is no trimming, fuzzy/substring search, case folding, alternate identity
-resolution, migration, endpoint, assignment/routing, reward semantic, or Telemt
-topology change.
+- Stage 11T scope docs:
+  `ad308e646c3f2a2bf1c3d7e3d378f4ca1e601b88`, CI `34614212190` PASS.
+- CP-061 Referral history authoritative exact status filter:
+  `8993aee8b9d980990504fe25261eb4c29879316e`, CI `34615741067` PASS.
 
 ## Explicit blockers
 
 ### Stage 11H — Bot Content runtime delivery wiring — BLOCKED
 
-Roadmap content slots exist, but runtime composition/fallback, button/emoji
-relationship, and missing-slot behavior are not defined. Do not invent them.
+Runtime composition/fallback, button/emoji relationship, and missing-slot behavior
+are not defined. Do not invent them.
 
 ### Stage 9D — Proxy Node test/health/status — BLOCKED
 
@@ -83,82 +70,57 @@ Reward recipient is unresolved: inviter, invitee, or both. Do not infer a recipi
 Cap scope/defaults, cooldown semantics/default, blacklist subject, and suspicious
 score inputs/threshold are unresolved. Do not invent them.
 
-Also do not invent Node/Sponsor assignment/routing, audit mutation/redaction wiring,
-Administrator RBAC enforcement, backup/restore, update/restart/log/version-source
-semantics, Dashboard metrics, referral-tree or user-scoped referral-history semantics,
-new Telemt topology, or secret persistence.
+Also do not invent Node/Sponsor assignment/routing, user-scoped referral-tree/history
+semantics, audit mutation/redaction wiring, Administrator RBAC enforcement,
+backup/restore, update/restart/log/version-source semantics, Dashboard metrics, new
+Telemt topology, or secret persistence.
 
 ## Stage 11S — Settings established referral reward configuration surface — COMPLETED AT CP-060
 
-CP-060 extends only authenticated `GET /settings` with the already-established
-referral reward amount and expiry configuration. The page reads
-`settings.ReferralReward` from authoritative SQLite and renders referral reward bytes
-and expiry days alongside the existing Start Gift surface.
+CP-060 extends authenticated `GET /settings` with the already-established referral
+reward bytes and expiry days and reuses the existing CSRF-protected
+`PUT /api/referral/reward-settings` contract. Browser handling preserves exact
+positive int64 decimal text and GET remains no-store/read-only. No reward
+recipient/issuance/anti-abuse semantics were added.
 
-The browser reuses the existing CSRF-protected
-`PUT /api/referral/reward-settings` contract. Positive int64 values are kept as exact
-decimal text in the browser, including values above JavaScript's safe integer range;
-the implementation does not use JavaScript `Number`, `parseInt`, or `parseFloat`.
-A successful update reloads `/settings`, so displayed values are read back from
-authoritative SQLite. GET remains `Cache-Control: no-store` and mutation-free.
+## Stage 11T — Referral history authoritative exact status filter — COMPLETED AT CP-061
 
-The candidate changes exactly
-`internal/httpapi/start_gift_settings_page.go` and
-`internal/httpapi/start_gift_settings_page_test.go`. Existing Start Gift behavior and
-the `/referrals` settings/history surface remain intact. No endpoint, persistence key,
-migration, Credit Bucket issuance, referral recipient/eligibility/finalization or
-anti-abuse behavior, assignment/routing, audit wiring, Bot runtime behavior, per-Node
-credential/health behavior, Telemt topology, or secret persistence was added.
+CP-061 extends only existing authenticated `GET /api/referral/history` and
+`GET /referrals` reads with one optional exact `status` filter over authoritative
+`referral_attributions.status`.
 
-Candidate `f038c8b266c66b9378d26547c7c4ab4a68e45de6`, CI `34613204935` PASS across
+Accepted values are exactly the established constants `pending`, `rewarded`, and
+`rejected`. The domain read model validates the filter, applies exact
+`ra.status = ?`, composes it with optional `before_id` using logical AND, and
+preserves newest-first bounded pagination.
+
+The HTTP parser rejects empty, duplicate, unknown, differently-cased, or otherwise
+invalid status values with the existing `REFERRAL_HISTORY_INVALID` Problem contract.
+The `/referrals` page offers only All/Pending/Rewarded/Rejected. Selecting All omits
+the status query parameter; active status and explicit limit are retained in Older
+referrals pagination.
+
+The candidate changes exactly:
+- `internal/referral/history.go`
+- `internal/httpapi/referral_history.go`
+- `internal/httpapi/referral_page.go`
+- `internal/referral/history_status_filter_test.go`
+- `internal/httpapi/referral_history_status_filter_test.go`
+- `internal/httpapi/referral_page_status_filter_test.go`
+
+No endpoint, migration, write path, rejection-reason filter, suspicious-referral
+classification, anti-abuse policy, reward recipient/issuance,
+eligibility/finalization mutation, referral tree or user-scoped filtering,
+assignment/routing, audit wiring, Bot runtime behavior, per-Node credentials/health,
+Telemt topology, or secret persistence was added.
+
+Candidate `8993aee8b9d980990504fe25261eb4c29879316e`, CI `34615741067` PASS across
 Format, Vet, full Go tests, installer syntax/unit tests, Docker prerequisites, and
 Telemt E2E/rerun.
 
-## Stage 11T — Referral history authoritative exact status filter — ACTIVE
-
-Scope is limited to extending the existing authenticated
-`GET /api/referral/history` and `GET /referrals` read contracts with one optional,
-single-value exact `status` filter over authoritative
-`referral_attributions.status`.
-
-Accepted values are exactly the already-established referral status constants:
-`pending`, `rewarded`, and `rejected`. No trimming, case folding, aliases, fuzzy
-matching, inferred status, or new status is introduced. An absent filter preserves
-current behavior.
-
-`referral.HistoryQuery` may carry the exact status. The read model validates a
-non-empty status against those three existing constants, applies `ra.status = ?`, and
-combines it with an optional `before_id` cursor using logical AND. Newest-first ID
-ordering, bounded `limit + 1` pagination, stored rejection/eligibility/finalization
-fields, and read-only behavior remain unchanged.
-
-The HTTP parser may additionally accept one `status` query value. Duplicate status,
-unknown status, or any otherwise malformed/unknown query continues to use the existing
-`REFERRAL_HISTORY_INVALID` Problem contract. The `/referrals` page adds a minimal GET
-status selector for All, Pending, Rewarded, and Rejected; Older referrals pagination
-retains the active status plus explicit limit. The existing referral reward settings
-form remains unchanged.
-
-No endpoint, migration, write path, rejection-reason filter, suspicious-referral
-classification, anti-abuse policy, reward recipient/issuance, eligibility/finalization
-mutation, referral tree, inviter/invitee user-scoped filtering, assignment/routing,
-audit wiring, Bot behavior, per-Node credentials/health, Telemt topology, or secret
-persistence is introduced.
-
-### Acceptance
-
-- Domain history filtering returns only the exact requested authoritative status.
-- `status` composes correctly with `before_id` and preserves newest-first pagination.
-- API accepts only one exact established status and rejects duplicate/unknown values
-  with `REFERRAL_HISTORY_INVALID`.
-- `/referrals` renders only the established status choices and preserves an active
-  filter in Older referrals links.
-- Unfiltered API/page behavior remains unchanged and GET remains no-store/read-only.
-- Focused domain/API/page regression tests and full CI PASS.
-
 ## Current next action
 
-Publish this Stage 11T scope as a plan-only commit and require full CI PASS. Then
-implement only the authoritative exact referral status filter described above,
-self-review the bounded diff, and require full CI again before checkpoint promotion.
-Preserve Credit Buckets as source of truth and every blocker above.
+Promote CP-061 documentation only and require full CI PASS. Then inspect the roadmap
+and current repository contracts for the next semantics-established bounded milestone.
+Preserve Credit Buckets as source of truth and every blocker above; do not invent
+missing product/runtime semantics.
