@@ -12,11 +12,13 @@ import (
 )
 
 type referralPageData struct {
-	Username    string
-	CSRF        string
-	Reward      settings.ReferralRewardSettings
-	History     []referral.HistoryEntry
-	NextPageURL string
+	Username      string
+	CSRF          string
+	Reward        settings.ReferralRewardSettings
+	History       []referral.HistoryEntry
+	CurrentStatus string
+	Limit         int
+	NextPageURL   string
 }
 
 var referralPageTemplate = template.Must(template.New("referrals").Funcs(template.FuncMap{
@@ -43,7 +45,7 @@ var referralPageTemplate = template.Must(template.New("referrals").Funcs(templat
 <meta name="csrf-token" content="{{.CSRF}}">
 <title>Teleproxy Referrals</title>
 <style>
-:root{font-family:Inter,ui-sans-serif,system-ui,sans-serif;color-scheme:dark;background:#0b1020;color:#eef2ff}*{box-sizing:border-box}body{margin:0;background:#0b1020;color:#eef2ff}header{display:flex;gap:18px;justify-content:space-between;align-items:center;padding:18px 5vw;border-bottom:1px solid #24304c;background:#10172a}header nav{display:flex;gap:14px;align-items:center;flex-wrap:wrap}a{color:#c9d7ff}main{padding:30px 5vw 56px;display:grid;gap:24px}.panel{border:1px solid #26324f;border-radius:16px;background:#11182a;padding:22px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}label{display:grid;gap:6px;font-size:13px;color:#cbd5e1}input{width:100%;border:1px solid #34415f;border-radius:9px;padding:10px;background:#0c1323;color:#fff;font:inherit}.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}button{border:1px solid #52617d;border-radius:9px;padding:9px 12px;background:#18223a;color:#fff;cursor:pointer}button.primary{background:#dbe6ff;color:#111827;border-color:#dbe6ff;font-weight:700}.muted{color:#9aa8c4}.status{min-height:1.4em;color:#fda4af;margin:8px 0 0}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;min-width:980px}th,td{text-align:left;padding:10px;border-bottom:1px solid #26324f;vertical-align:top}th{font-size:12px;color:#aebbd6}td{font-size:13px}.tag{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.empty{color:#9aa8c4}.pager{margin-top:16px}@media(max-width:600px){header{align-items:flex-start;flex-direction:column}}
+:root{font-family:Inter,ui-sans-serif,system-ui,sans-serif;color-scheme:dark;background:#0b1020;color:#eef2ff}*{box-sizing:border-box}body{margin:0;background:#0b1020;color:#eef2ff}header{display:flex;gap:18px;justify-content:space-between;align-items:center;padding:18px 5vw;border-bottom:1px solid #24304c;background:#10172a}header nav{display:flex;gap:14px;align-items:center;flex-wrap:wrap}a{color:#c9d7ff}main{padding:30px 5vw 56px;display:grid;gap:24px}.panel{border:1px solid #26324f;border-radius:16px;background:#11182a;padding:22px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}label{display:grid;gap:6px;font-size:13px;color:#cbd5e1}input,select{width:100%;border:1px solid #34415f;border-radius:9px;padding:10px;background:#0c1323;color:#fff;font:inherit}.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}button{border:1px solid #52617d;border-radius:9px;padding:9px 12px;background:#18223a;color:#fff;cursor:pointer}button.primary{background:#dbe6ff;color:#111827;border-color:#dbe6ff;font-weight:700}.muted{color:#9aa8c4}.status{min-height:1.4em;color:#fda4af;margin:8px 0 0}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;min-width:980px}th,td{text-align:left;padding:10px;border-bottom:1px solid #26324f;vertical-align:top}th{font-size:12px;color:#aebbd6}td{font-size:13px}.tag{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.empty{color:#9aa8c4}.pager{margin-top:16px}.history-filter{display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin-bottom:16px}.history-filter label{min-width:210px}@media(max-width:600px){header{align-items:flex-start;flex-direction:column}}
 </style>
 </head>
 <body>
@@ -63,6 +65,11 @@ var referralPageTemplate = template.Must(template.New("referrals").Funcs(templat
 </section>
 <section class="panel">
 <h1>Referral history</h1>
+<form class="history-filter" method="get" action="/referrals">
+<label>Status<select name="status"><option value=""{{if eq .CurrentStatus ""}} selected{{end}}>All</option><option value="pending"{{if eq .CurrentStatus "pending"}} selected{{end}}>Pending</option><option value="rewarded"{{if eq .CurrentStatus "rewarded"}} selected{{end}}>Rewarded</option><option value="rejected"{{if eq .CurrentStatus "rejected"}} selected{{end}}>Rejected</option></select></label>
+{{if .Limit}}<input type="hidden" name="limit" value="{{.Limit}}">{{end}}
+<button type="submit">Filter</button>
+</form>
 {{if .History}}
 <div class="table-wrap"><table>
 <thead><tr><th>ID</th><th>Inviter Telegram ID</th><th>Invitee Telegram ID</th><th>Status</th><th>Rejection</th><th>Eligible at</th><th>Finalized at</th><th>Created at</th><th>Updated at</th></tr></thead>
@@ -81,6 +88,11 @@ var referralPageTemplate = template.Must(template.New("referrals").Funcs(templat
   const csrfMeta = document.querySelector('meta[name="csrf-token"]');
   const csrf = csrfMeta ? csrfMeta.content : '';
   const status = form.querySelector('.status');
+  const historyFilter = document.querySelector('.history-filter');
+  historyFilter.addEventListener('submit', () => {
+    const statusFilter = historyFilter.elements.status;
+    if (statusFilter.value === '') statusFilter.disabled = true;
+  });
 
   form.addEventListener('submit', async event => {
     event.preventDefault();
@@ -145,11 +157,13 @@ func (s *Server) handleReferralPage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := referralPageTemplate.Execute(w, referralPageData{
-		Username:    session.Admin.Username,
-		CSRF:        sessionCSRF(token),
-		Reward:      reward,
-		History:     page.Items,
-		NextPageURL: referralPageNextURL(query, page.NextBeforeID),
+		Username:      session.Admin.Username,
+		CSRF:          sessionCSRF(token),
+		Reward:        reward,
+		History:       page.Items,
+		CurrentStatus: string(query.Status),
+		Limit:         query.Limit,
+		NextPageURL:   referralPageNextURL(query, page.NextBeforeID),
 	}); err != nil {
 		return
 	}
@@ -162,6 +176,9 @@ func referralPageNextURL(query referral.HistoryQuery, next *int64) string {
 	values := url.Values{"before_id": []string{strconv.FormatInt(*next, 10)}}
 	if query.Limit > 0 {
 		values.Set("limit", strconv.Itoa(query.Limit))
+	}
+	if query.Status != "" {
+		values.Set("status", string(query.Status))
 	}
 	return "/referrals?" + values.Encode()
 }

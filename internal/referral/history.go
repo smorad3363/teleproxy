@@ -15,6 +15,7 @@ const (
 type HistoryQuery struct {
 	BeforeID int64
 	Limit    int
+	Status   Status
 }
 
 type HistoryEntry struct {
@@ -49,6 +50,9 @@ func History(ctx context.Context, db *sql.DB, query HistoryQuery) (HistoryPage, 
 	if query.Limit < 1 || query.Limit > MaxHistoryLimit {
 		return HistoryPage{}, fmt.Errorf("history limit must be between 1 and %d", MaxHistoryLimit)
 	}
+	if query.Status != "" && query.Status != StatusPending && query.Status != StatusRewarded && query.Status != StatusRejected {
+		return HistoryPage{}, fmt.Errorf("history status is invalid")
+	}
 
 	statement := `
 SELECT
@@ -66,10 +70,20 @@ SELECT
 FROM referral_attributions AS ra
 JOIN telegram_users AS inviter ON inviter.id = ra.inviter_user_id
 JOIN telegram_users AS invitee ON invitee.id = ra.invitee_user_id`
-	args := make([]any, 0, 2)
+	args := make([]any, 0, 3)
+	hasWhere := false
 	if query.BeforeID > 0 {
 		statement += "\nWHERE ra.id < ?"
 		args = append(args, query.BeforeID)
+		hasWhere = true
+	}
+	if query.Status != "" {
+		if hasWhere {
+			statement += " AND ra.status = ?"
+		} else {
+			statement += "\nWHERE ra.status = ?"
+		}
+		args = append(args, string(query.Status))
 	}
 	statement += "\nORDER BY ra.id DESC\nLIMIT ?"
 	args = append(args, query.Limit+1)

@@ -34,7 +34,7 @@ func (s *Server) handleReferralHistoryList(w http.ResponseWriter, r *http.Reques
 func parseReferralHistoryQuery(w http.ResponseWriter, r *http.Request) (referral.HistoryQuery, bool) {
 	values := r.URL.Query()
 	for key := range values {
-		if key != "before_id" && key != "limit" {
+		if key != "before_id" && key != "limit" && key != "status" {
 			writeReferralHistoryProblem(w, r, "The referral history query is invalid.")
 			return referral.HistoryQuery{}, false
 		}
@@ -64,6 +64,18 @@ func parseReferralHistoryQuery(w http.ResponseWriter, r *http.Request) (referral
 			return referral.HistoryQuery{}, false
 		}
 		query.Limit = value
+	}
+	if raw, exists := values["status"]; exists {
+		if len(raw) != 1 {
+			writeReferralHistoryProblem(w, r, "The referral history status is invalid.")
+			return referral.HistoryQuery{}, false
+		}
+		status := referral.Status(raw[0])
+		if status != referral.StatusPending && status != referral.StatusRewarded && status != referral.StatusRejected {
+			writeReferralHistoryProblem(w, r, "The referral history status is invalid.")
+			return referral.HistoryQuery{}, false
+		}
+		query.Status = status
 	}
 	return query, true
 }
