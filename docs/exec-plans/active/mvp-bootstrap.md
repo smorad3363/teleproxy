@@ -3,10 +3,10 @@
 Status: ACTIVE
 Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
-Latest verified code checkpoint: `046d487f38ebbbe30ba8dd753ce728f781042b04` (CP-062)
-Most recent verified code CI: `34620300934` PASS
-Current branch checkpoint: `a5fcc2db68c38987231e22d453b5106ebfd19ac8` (CP-062 promotion docs)
-Current branch CI: `34620702411` PASS
+Latest verified code checkpoint: `76681c8c7a5031cb44d3c12e3664d11f8421cc29` (CP-063)
+Most recent verified code CI: `34621814385` PASS
+Current branch checkpoint: `76681c8c7a5031cb44d3c12e3664d11f8421cc29` (CP-063 candidate)
+Current branch CI: `34621814385` PASS
 
 Historical execution detail through CP-059 is preserved byte-for-byte at
 `docs/exec-plans/archive/mvp-bootstrap-through-cp059.md`, using the prior active-plan
@@ -59,6 +59,12 @@ was published.
   E2E/rerun.
 - CP-062 promotion docs:
   `a5fcc2db68c38987231e22d453b5106ebfd19ac8`, CI `34620702411` PASS.
+- Stage 12A scope docs:
+  `e5ae7a0866b13ba68640ddf5d9370787700cc68a`, CI `34621417199` PASS.
+- CP-063 Management CLI doctor Compose/container checks:
+  `76681c8c7a5031cb44d3c12e3664d11f8421cc29`, CI `34621814385` PASS across Format,
+  Vet, full Go tests, installer syntax/unit tests, Docker prerequisites, and Telemt
+  E2E/rerun including `tproxy doctor` after initial install and rerun.
 
 ## Explicit blockers
 
@@ -128,49 +134,37 @@ no-store/read-only and regression coverage verifies exact filtering, independent
 status composition, bounded pagination, invalid-query rejection, and no authoritative
 state mutation.
 
-## Stage 12A — Management CLI doctor Compose/container checks — ACTIVE
+## Stage 12A — Management CLI doctor Compose/container checks — COMPLETED AT CP-063
 
-Scope is limited to strengthening the existing host-side `tproxy doctor` command with
-checks whose semantics are already fixed by the installer and Compose topology.
+CP-063 strengthens only the existing host-side `tproxy doctor` path. It preserves the
+existing Docker daemon check, Control Plane `/readyz`, and Proxy Plane `proxy_health`
+behavior while adding bounded checks for installed Compose configuration validity and
+for the expected `control` and `telemt` containers to exist and be running.
 
-The command must preserve its existing Docker daemon check, Control Plane `/readyz`
-check, and existing `proxy_health` behavior. It additionally validates the installed
-Compose configuration with the same project/env/file inputs already used by `compose()`,
-and verifies that both expected Compose services (`control` and `telemt`) have a
-container and that each container is running.
+`control` container-running state remains separate from `/readyz`; no Docker
+healthcheck was invented. `telemt` container-running state remains separate from and
+does not weaken the existing authoritative Proxy Plane health check. Doctor failures
+remain non-zero and diagnostics are bounded; no state-file contents, secret contents,
+tokens, passwords, internal Telemt credentials, or raw Docker inspect dumps are
+printed.
 
-For `control`, running-container state and the existing `/readyz` request remain
-separate checks: the image does not define a Docker healthcheck, while `/readyz` already
-checks Control Plane database readiness. For `telemt`, the existing `proxy_health`
-check remains authoritative for healthy proxy state; the added container-running check
-does not replace or weaken it.
+The final scoped diff contains exactly:
+- `bin/tproxy`
+- `tests/installer_e2e.sh`
 
-Failures must produce bounded, non-secret diagnostics and a non-zero doctor exit. The
-command must not print state-file contents, secret-file contents, tokens, passwords,
-internal Telemt credentials, or raw Docker inspect dumps. Existing `status`, `logs`,
-`restart`, `start`, `stop`, `proxy`, `config`, and `panel` command behavior is unchanged.
+Both executable modes remain `100755`. Installer E2E now invokes `tproxy doctor` after
+the first successful install and after rerun, and verifies only the established bounded
+labels: `Compose: valid`, `Control container: running`, `Telemt container: running`,
+`Control Plane: ready`, and `Proxy Plane: healthy`.
 
-Regression coverage is limited to the existing installer E2E path: after a successful
-install and again after the rerun, `tproxy doctor` must succeed and expose the bounded
-Compose/container/readiness/proxy-health labels. No new daemon, migration, endpoint,
-backup/update/rollback, watchdog, Node health, Bot connectivity, DNS, disk, clock, or
-repair semantics are introduced in this milestone.
-
-### Acceptance
-
-- `doctor` fails if Docker daemon access fails (existing behavior).
-- `doctor` validates Compose configuration and reports a bounded `Compose: valid` line.
-- `doctor` verifies `control` and `telemt` containers exist and are running.
-- `doctor` still requires Control Plane `/readyz` and existing healthy Proxy Plane.
-- Installer E2E invokes `doctor` on first install and rerun and checks the expected
-  bounded output.
-- No secrets/state dump is added, no unrelated CLI command semantics change, and full
-  CI passes.
+No daemon, migration, endpoint, backup/update/rollback, watchdog, Node health, Bot
+connectivity, DNS, disk, clock, repair semantics, or unrelated CLI command behavior was
+added or changed. Candidate `76681c8c7a5031cb44d3c12e3664d11f8421cc29`,
+CI `34621814385` PASS all gates.
 
 ## Current next action
 
-Publish this Stage 12A scope as a plan-only commit and require full CI PASS. Then
-implement only the bounded `tproxy doctor` Compose/container checks above, self-review
-the CLI/test diff, and require full CI again before checkpoint promotion. Preserve all
-explicit blockers and do not broaden doctor into backup/update/repair or product-level
-health semantics.
+Promote CP-063 documentation only and require full CI PASS. Then inspect the roadmap
+and current repository contracts for the next semantics-established bounded milestone.
+Preserve every explicit blocker, existing lifecycle separation, and Credit Buckets as
+authoritative quota/reward state; do not invent missing product/runtime semantics.
