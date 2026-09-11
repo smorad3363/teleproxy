@@ -34,7 +34,7 @@ func (s *Server) handleReferralHistoryList(w http.ResponseWriter, r *http.Reques
 func parseReferralHistoryQuery(w http.ResponseWriter, r *http.Request) (referral.HistoryQuery, bool) {
 	values := r.URL.Query()
 	for key := range values {
-		if key != "before_id" && key != "limit" && key != "status" {
+		if key != "before_id" && key != "limit" && key != "status" && key != "rejection_reason" {
 			writeReferralHistoryProblem(w, r, "The referral history query is invalid.")
 			return referral.HistoryQuery{}, false
 		}
@@ -77,7 +77,33 @@ func parseReferralHistoryQuery(w http.ResponseWriter, r *http.Request) (referral
 		}
 		query.Status = status
 	}
+	if raw, exists := values["rejection_reason"]; exists {
+		if len(raw) != 1 {
+			writeReferralHistoryProblem(w, r, "The referral history rejection reason is invalid.")
+			return referral.HistoryQuery{}, false
+		}
+		reason := referral.RejectionReason(raw[0])
+		if !validReferralHistoryRejectionReason(reason) {
+			writeReferralHistoryProblem(w, r, "The referral history rejection reason is invalid.")
+			return referral.HistoryQuery{}, false
+		}
+		query.RejectionReason = reason
+	}
 	return query, true
+}
+
+func validReferralHistoryRejectionReason(reason referral.RejectionReason) bool {
+	switch reason {
+	case referral.RejectionAntiAbuse,
+		referral.RejectionDailyCap,
+		referral.RejectionWeeklyCap,
+		referral.RejectionCooldown,
+		referral.RejectionBlacklist,
+		referral.RejectionSuspicious:
+		return true
+	default:
+		return false
+	}
 }
 
 func writeReferralHistoryProblem(w http.ResponseWriter, r *http.Request, message string) {

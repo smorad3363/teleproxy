@@ -12,13 +12,14 @@ import (
 )
 
 type referralPageData struct {
-	Username      string
-	CSRF          string
-	Reward        settings.ReferralRewardSettings
-	History       []referral.HistoryEntry
-	CurrentStatus string
-	Limit         int
-	NextPageURL   string
+	Username               string
+	CSRF                   string
+	Reward                 settings.ReferralRewardSettings
+	History                []referral.HistoryEntry
+	CurrentStatus          string
+	CurrentRejectionReason string
+	Limit                  int
+	NextPageURL            string
 }
 
 var referralPageTemplate = template.Must(template.New("referrals").Funcs(template.FuncMap{
@@ -67,6 +68,7 @@ var referralPageTemplate = template.Must(template.New("referrals").Funcs(templat
 <h1>Referral history</h1>
 <form class="history-filter" method="get" action="/referrals">
 <label>Status<select name="status"><option value=""{{if eq .CurrentStatus ""}} selected{{end}}>All</option><option value="pending"{{if eq .CurrentStatus "pending"}} selected{{end}}>Pending</option><option value="rewarded"{{if eq .CurrentStatus "rewarded"}} selected{{end}}>Rewarded</option><option value="rejected"{{if eq .CurrentStatus "rejected"}} selected{{end}}>Rejected</option></select></label>
+<label>Rejection reason<select name="rejection_reason"><option value=""{{if eq .CurrentRejectionReason ""}} selected{{end}}>All</option><option value="anti_abuse"{{if eq .CurrentRejectionReason "anti_abuse"}} selected{{end}}>Anti abuse</option><option value="daily_cap"{{if eq .CurrentRejectionReason "daily_cap"}} selected{{end}}>Daily cap</option><option value="weekly_cap"{{if eq .CurrentRejectionReason "weekly_cap"}} selected{{end}}>Weekly cap</option><option value="cooldown"{{if eq .CurrentRejectionReason "cooldown"}} selected{{end}}>Cooldown</option><option value="blacklist"{{if eq .CurrentRejectionReason "blacklist"}} selected{{end}}>Blacklist</option><option value="suspicious"{{if eq .CurrentRejectionReason "suspicious"}} selected{{end}}>Suspicious</option></select></label>
 {{if .Limit}}<input type="hidden" name="limit" value="{{.Limit}}">{{end}}
 <button type="submit">Filter</button>
 </form>
@@ -91,7 +93,9 @@ var referralPageTemplate = template.Must(template.New("referrals").Funcs(templat
   const historyFilter = document.querySelector('.history-filter');
   historyFilter.addEventListener('submit', () => {
     const statusFilter = historyFilter.elements.status;
+    const rejectionReasonFilter = historyFilter.elements.rejection_reason;
     if (statusFilter.value === '') statusFilter.disabled = true;
+    if (rejectionReasonFilter.value === '') rejectionReasonFilter.disabled = true;
   });
 
   form.addEventListener('submit', async event => {
@@ -157,13 +161,14 @@ func (s *Server) handleReferralPage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := referralPageTemplate.Execute(w, referralPageData{
-		Username:      session.Admin.Username,
-		CSRF:          sessionCSRF(token),
-		Reward:        reward,
-		History:       page.Items,
-		CurrentStatus: string(query.Status),
-		Limit:         query.Limit,
-		NextPageURL:   referralPageNextURL(query, page.NextBeforeID),
+		Username:               session.Admin.Username,
+		CSRF:                   sessionCSRF(token),
+		Reward:                 reward,
+		History:                page.Items,
+		CurrentStatus:          string(query.Status),
+		CurrentRejectionReason: string(query.RejectionReason),
+		Limit:                  query.Limit,
+		NextPageURL:            referralPageNextURL(query, page.NextBeforeID),
 	}); err != nil {
 		return
 	}
@@ -179,6 +184,9 @@ func referralPageNextURL(query referral.HistoryQuery, next *int64) string {
 	}
 	if query.Status != "" {
 		values.Set("status", string(query.Status))
+	}
+	if query.RejectionReason != "" {
+		values.Set("rejection_reason", string(query.RejectionReason))
 	}
 	return "/referrals?" + values.Encode()
 }

@@ -13,9 +13,10 @@ const (
 )
 
 type HistoryQuery struct {
-	BeforeID int64
-	Limit    int
-	Status   Status
+	BeforeID        int64
+	Limit           int
+	Status          Status
+	RejectionReason RejectionReason
 }
 
 type HistoryEntry struct {
@@ -53,6 +54,9 @@ func History(ctx context.Context, db *sql.DB, query HistoryQuery) (HistoryPage, 
 	if query.Status != "" && query.Status != StatusPending && query.Status != StatusRewarded && query.Status != StatusRejected {
 		return HistoryPage{}, fmt.Errorf("history status is invalid")
 	}
+	if query.RejectionReason != "" && !validRejectionReason(query.RejectionReason) {
+		return HistoryPage{}, fmt.Errorf("history rejection reason is invalid")
+	}
 
 	statement := `
 SELECT
@@ -70,7 +74,7 @@ SELECT
 FROM referral_attributions AS ra
 JOIN telegram_users AS inviter ON inviter.id = ra.inviter_user_id
 JOIN telegram_users AS invitee ON invitee.id = ra.invitee_user_id`
-	args := make([]any, 0, 3)
+	args := make([]any, 0, 4)
 	hasWhere := false
 	if query.BeforeID > 0 {
 		statement += "\nWHERE ra.id < ?"
@@ -84,6 +88,15 @@ JOIN telegram_users AS invitee ON invitee.id = ra.invitee_user_id`
 			statement += "\nWHERE ra.status = ?"
 		}
 		args = append(args, string(query.Status))
+		hasWhere = true
+	}
+	if query.RejectionReason != "" {
+		if hasWhere {
+			statement += " AND ra.rejection_reason = ?"
+		} else {
+			statement += "\nWHERE ra.rejection_reason = ?"
+		}
+		args = append(args, string(query.RejectionReason))
 	}
 	statement += "\nORDER BY ra.id DESC\nLIMIT ?"
 	args = append(args, query.Limit+1)
@@ -113,6 +126,15 @@ JOIN telegram_users AS invitee ON invitee.id = ra.invitee_user_id`
 		page.NextBeforeID = &next
 	}
 	return page, nil
+}
+
+func validRejectionReason(reason RejectionReason) bool {
+	switch reason {
+	case RejectionAntiAbuse, RejectionDailyCap, RejectionWeeklyCap, RejectionCooldown, RejectionBlacklist, RejectionSuspicious:
+		return true
+	default:
+		return false
+	}
 }
 
 func scanHistoryEntry(row scanner) (HistoryEntry, error) {
