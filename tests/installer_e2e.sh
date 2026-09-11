@@ -21,6 +21,8 @@ trap cleanup EXIT
 
 run_install() {
   local out=$1
+  # Redirect intentionally stays with the invoking user; sudo applies only to installer.
+  # shellcheck disable=SC2024
   sudo env \
     PATH="$PATH" \
     TPROXY_INSTALL_DIR="$INSTALL_DIR" \

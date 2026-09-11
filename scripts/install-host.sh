@@ -198,7 +198,7 @@ fi
 
 start_output=""
 start_ok=0
-for attempt in 1 2 3 4 5; do
+for _ in 1 2 3 4 5; do
   if start_output=$(compose up -d --build 2>&1); then
     start_ok=1
     break

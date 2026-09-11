@@ -14,9 +14,15 @@ trap cleanup EXIT
 port=$(choose_free_port 30000 45000 64)
 validate_port "$port"
 validate_ipv4 127.0.0.1
-! validate_ipv4 999.0.0.1
+if validate_ipv4 999.0.0.1; then
+  echo "invalid IPv4 address was accepted" >&2
+  exit 1
+fi
 validate_hostname proxy.example.com
-! validate_hostname 'bad host'
+if validate_hostname 'bad host'; then
+  echo "invalid hostname was accepted" >&2
+  exit 1
+fi
 ((port >= 30000 && port <= 45000))
 if port_in_use "$port"; then
   echo "chosen port unexpectedly reported in use" >&2
