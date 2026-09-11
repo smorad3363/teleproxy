@@ -67,7 +67,7 @@ if [[ -f "$STATE_FILE" ]]; then
   [[ -n "$persisted_bind" ]] && PANEL_BIND=$persisted_bind
   [[ -n "$persisted_image" ]] && CONTROL_IMAGE=$persisted_image
   [[ -n "$persisted_proxy_port" ]] && PROXY_PORT=$persisted_proxy_port
-  [[ -n "$persisted_proxy_bind" ]] && PROXY_BIND=$persisted_bind
+  [[ -n "$persisted_proxy_bind" ]] && PROXY_BIND=$persisted_proxy_bind
   [[ -n "$persisted_telemt_image" ]] && TELEMT_IMAGE=$persisted_telemt_image
   [[ -n "$persisted_tls_domain" ]] && TELEMT_TLS_DOMAIN=$persisted_tls_domain
   [[ -z "$REQUESTED_SOURCE_REF" && -n "$persisted_source_ref" ]] && SOURCE_REF=$persisted_source_ref
