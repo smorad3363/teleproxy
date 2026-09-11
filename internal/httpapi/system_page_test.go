@@ -69,6 +69,80 @@ func TestSystemPageRendersEstablishedHealthWithoutMutation(t *testing.T) {
 	}
 }
 
+func TestDashboardRendersEstablishedHealthWithoutMutation(t *testing.T) {
+	db := testDB(t)
+	owner, _, err := admin.BootstrapOwner(context.Background(), db, "admin", "generated-admin-password-123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, _, err := admin.CreateSession(context.Background(), db, owner.ID, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	healthCalls := 0
+	server := NewWithProxyHealth(db, Options{}, fakeProxyHealth(func(context.Context) telemt.Health {
+		healthCalls++
+		return telemt.Health{State: telemt.StateHealthy, ReadOnly: true}
+	}))
+	cookies := []*http.Cookie{{Name: sessionCookieName, Value: token}}
+	beforeAudit := countHTTPRows(t, db, "audit_log")
+	beforeSettings := countHTTPRows(t, db, "settings")
+
+	response := perform(server.Handler(), http.MethodGet, "/", nil, cookies)
+	if response.Code != http.StatusOK {
+		t.Fatalf("dashboard = %d %s", response.Code, response.Body.String())
+	}
+	if got := response.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("Cache-Control = %q", got)
+	}
+	if got := response.Header().Get("Content-Type"); got != "text/html; charset=utf-8" {
+		t.Fatalf("Content-Type = %q", got)
+	}
+	body := response.Body.String()
+	for _, want := range []string{"Control Plane", "online", "Database", "ready", "Global Proxy", "healthy", "Proxy read-only mode", "yes", owner.Username} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("dashboard missing %q: %s", want, body)
+		}
+	}
+	for _, href := range []string{"/system", "/users", "/admins", "/audit-log", "/sponsors", "/nodes", "/referrals", "/forced-join", "/settings", "/bot-content"} {
+		if !strings.Contains(body, `href="`+href+`"`) {
+			t.Fatalf("dashboard missing navigation %q: %s", href, body)
+		}
+	}
+	if !strings.Contains(body, `action="/logout"`) {
+		t.Fatalf("dashboard missing logout form: %s", body)
+	}
+	_ = extractCSRF(t, body)
+	if healthCalls != 1 {
+		t.Fatalf("dashboard proxy health checks = %d, want 1", healthCalls)
+	}
+	if countHTTPRows(t, db, "audit_log") != beforeAudit || countHTTPRows(t, db, "settings") != beforeSettings {
+		t.Fatal("dashboard rendering mutated authoritative state")
+	}
+}
+
+func TestDashboardRendersNotConfiguredProxySafely(t *testing.T) {
+	db := testDB(t)
+	owner, _, err := admin.BootstrapOwner(context.Background(), db, "admin", "generated-admin-password-123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, _, err := admin.CreateSession(context.Background(), db, owner.ID, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := NewWithProxyHealth(db, Options{}, nil)
+
+	response := perform(server.Handler(), http.MethodGet, "/", nil, []*http.Cookie{{Name: sessionCookieName, Value: token}})
+	if response.Code != http.StatusOK {
+		t.Fatalf("dashboard = %d %s", response.Code, response.Body.String())
+	}
+	body := response.Body.String()
+	if !strings.Contains(body, "not_configured") || !strings.Contains(body, "not applicable") {
+		t.Fatalf("dashboard missing not-configured proxy state: %s", body)
+	}
+}
+
 func TestSystemPageRendersNotConfiguredProxySafely(t *testing.T) {
 	db := testDB(t)
 	owner, _, err := admin.BootstrapOwner(context.Background(), db, "admin", "generated-admin-password-123")

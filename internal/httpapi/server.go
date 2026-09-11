@@ -14,6 +14,7 @@ import (
 
 	"github.com/smorad3363/teleproxy/internal/admin"
 	"github.com/smorad3363/teleproxy/internal/auth"
+	"github.com/smorad3363/teleproxy/internal/telemt"
 )
 
 const (
@@ -30,11 +31,12 @@ type Options struct {
 }
 
 type Server struct {
-	mux          *http.ServeMux
-	db           *sql.DB
-	cookieSecure bool
-	sessionTTL   time.Duration
-	loginLimiter *loginLimiter
+	mux                *http.ServeMux
+	db                 *sql.DB
+	cookieSecure       bool
+	sessionTTL         time.Duration
+	loginLimiter       *loginLimiter
+	proxyHealthChecker telemt.Checker
 }
 
 func New(db *sql.DB, options Options) *Server {
@@ -160,12 +162,32 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
+
+	proxyHealth := telemt.Health{State: telemt.StateNotConfigured}
+	proxyReadOnlyKnown := s.proxyHealthChecker != nil
+	if s.proxyHealthChecker != nil {
+		proxyHealth = s.proxyHealthChecker.Health(r.Context())
+	}
+
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_ = dashboardTemplate.Execute(w, struct {
-		Username string
-		CSRF     string
-	}{Username: session.Admin.Username, CSRF: sessionCSRF(token)})
+		Username           string
+		CSRF               string
+		PanelState         string
+		DatabaseState      string
+		ProxyState         telemt.State
+		ProxyReadOnly      bool
+		ProxyReadOnlyKnown bool
+	}{
+		Username:           session.Admin.Username,
+		CSRF:               sessionCSRF(token),
+		PanelState:         "online",
+		DatabaseState:      s.systemDatabaseState(),
+		ProxyState:         proxyHealth.State,
+		ProxyReadOnly:      proxyHealth.ReadOnly,
+		ProxyReadOnlyKnown: proxyReadOnlyKnown,
+	})
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
