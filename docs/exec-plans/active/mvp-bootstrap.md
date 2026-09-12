@@ -1,12 +1,12 @@
 # MVP Bootstrap Execution Plan
 
-Status: BLOCKED ON PRODUCT/RUNTIME CONTRACTS
+Status: ACTIVE
 Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
 Latest verified code checkpoint: `229368ba6bde81f449ed1c0e91deb0c4a9d3ca46` (CP-072)
 Most recent verified code CI: `34658384988` PASS
-Current branch checkpoint: `f0042698589747d228e7de1a9a8612548cdbb8de` (CP-072 promotion docs)
-Current branch CI: `34658572418` PASS
+Current branch checkpoint: `d1109a83211903dcf5dd0602b9154f37cf3dc8cf` (post-CP-072 blocked recovery docs)
+Current branch CI: `34658771157` PASS
 
 Historical execution detail is preserved without deletion:
 - through CP-059 at `docs/exec-plans/archive/mvp-bootstrap-through-cp059.md`;
@@ -30,8 +30,9 @@ are repaired forward only.
 - Credit Buckets are authoritative quota/reward state.
 - Telemt quota/expiry is only an enforcement projection.
 - Control Plane and Telemt lifecycles remain independent.
-- Plaintext admin/API/Bot/webhook/MTProto secrets are never logged or persisted by
-  Control Plane.
+- Plaintext admin/API/Bot/webhook/MTProto secrets are never logged or persisted in
+  SQLite. Stage 11X explicitly permits Bot token/webhook-secret persistence only as
+  owner-readable secret files outside the database.
 - Migrations remain additive/backward-compatible.
 
 ## Current verified checkpoints
@@ -65,12 +66,15 @@ are repaired forward only.
 - CP-072 promotion docs:
   `f0042698589747d228e7de1a9a8612548cdbb8de`, CI `34658572418` PASS across every
   established gate.
+- Post-CP-072 blocked recovery docs:
+  `d1109a83211903dcf5dd0602b9154f37cf3dc8cf`, CI `34658771157` PASS.
 
 ## Explicit blockers
 
 ### Stage 11H — Bot Content runtime delivery wiring — BLOCKED
 Runtime composition/fallback, button/emoji relationship, and missing-slot behavior are
-not defined. Do not invent them.
+not defined. Do not invent them. Stage 11X below is only Bot runtime configuration and
+must not change Bot Content composition semantics.
 
 ### Stage 9D — Proxy Node test/health/status — BLOCKED
 Per-Node credential source and `internal_api_endpoint` runtime meaning are not
@@ -86,7 +90,8 @@ inputs/threshold are unresolved. Do not invent them.
 Also do not invent Node/Sponsor assignment/routing, user-scoped referral-tree/history
 semantics, audit mutation/redaction wiring, Administrator RBAC enforcement,
 backup/restore, update/restart/log/version-source semantics, Dashboard metrics, new
-Telemt topology, or secret persistence.
+Telemt topology, or secret persistence outside the narrowly established Stage 11X Bot
+secret-file contract.
 
 ## Remaining CI roadmap — REVIEWED / NOT SCOPED
 
@@ -127,38 +132,65 @@ No restart/watchdog action, restart-loop state, notification, Compose `depends_o
 schema/migration/API/topology, secret-persistence, or Control/Telemt lifecycle-coupling
 change was added.
 
-## Post-CP-072 roadmap/repository review — NO FURTHER SAFE INDEPENDENT MILESTONE
+## Post-CP-072 roadmap/repository review
 
-The repository now covers the contract-defined recovery primitives that can be added
-without inventing product/runtime behavior: independent Compose restart policies,
-Control and Telemt Docker healthchecks, bounded installer health verification for both
-planes, direct Control readiness verification, `tproxy doctor` visibility for both
-container-running state and both Docker health signals, and graceful Control shutdown.
+The repository covers the previously contract-defined recovery primitives. Remaining
+watchdog, backup/update/rollback, product routing, RBAC, Bot Content composition and CI
+tooling contracts stay blocked as recorded above.
 
-The recursive repository tree contains no host watchdog or backup implementation scaffold
-whose missing behavior can be completed mechanically. The reliability contract says a
-watchdog must avoid restart loops and degrade after repeated failures, but it does not
-define the repeated-failure threshold/cadence, durable loop-state location, restart
-budget, or admin-notification transport. Implementing that now would invent runtime
-semantics.
+The user has now explicitly established one previously missing product contract: Telegram
+Bot runtime credentials and administrator Chat ID must be configurable inside the Web
+Panel rather than by editing an `.env` file or installer command. That decision scopes
+Stage 11X below and does not resolve unrelated blockers.
 
-Backup/update/rollback likewise remain intentionally blocked: the docs describe required
-properties, but the repository has no selected backup snapshot/retention/restore command
-contract, version source, update artifact/checksum source, activation/rollback state
-model, or CLI/operator semantics. Those choices affect persistent state and rollback and
-must not be guessed.
+## Stage 11X — Panel-managed Telegram Bot runtime settings — SCOPED
 
-The remaining product milestones are the explicit blockers above. The remaining CI
-recommendations also lack repository-selected tools, versions, policies and acceptance
-thresholds. Therefore no further code milestone is safely scopeable from the current
-roadmap/repository contracts.
+Product/runtime contract established by the user:
+- The existing `/settings` Web Panel gains a Telegram Bot section for `Bot Username`,
+  `Admin Chat ID`, `Enabled`, and Bot Token replacement.
+- Bot Token is write-only in the UI/API. Reads expose only whether a token is configured;
+  the plaintext token is never returned, logged, or stored in SQLite.
+- Bot Token and Telegram webhook secret persist only as dedicated owner-readable secret
+  files (`0600`) under the existing Teleproxy secrets directory. The Control container
+  may write those two files; no other plaintext-secret persistence is introduced.
+- Webhook secret is generated cryptographically by Control when first enabling/saving Bot
+  configuration and is never rendered back to the UI.
+- Bot Username, positive administrator private-chat ID, enabled state, and timestamps are
+  stored in an additive SQLite settings table. Admin Chat ID is the destination for the
+  panel's fixed Bot configuration test message; no broader notification policy is
+  inferred.
+- Saving settings is CSRF-protected and bounded. Token input may be left empty only when a
+  valid token file already exists; an empty token never clears an existing token.
+- A `Test Bot` action sends one fixed, non-user-controlled test message to the configured
+  Admin Chat ID using the configured token. Telegram/API failure responses remain generic
+  and must not leak token-bearing URLs or response bodies.
+- Telegram webhook handling reads the current enabled DB settings and secret files at
+  request time, so panel changes take effect without a Control restart. Disabled or
+  incomplete Bot configuration must not affect Control/Telemt startup or health.
+- Existing `/telegram/webhook` authentication semantics, Forced Join/start/provisioning
+  behavior and Telemt quota reconciliation remain unchanged once a configured Bot request
+  reaches the established handler.
+- This milestone does not register a public Telegram webhook, invent TLS/domain exposure,
+  add Bot Content delivery composition, add admin-notification behavior beyond the fixed
+  test action, or add Chat-ID-based administrator authorization.
+
+Implementation scope is limited to:
+- one additive migration for non-secret Bot runtime settings;
+- a small `internal/settings` Bot runtime store/validator and tests;
+- Web Panel/API wiring under the existing `/settings` surface plus tests;
+- safe Bot secret-file read/write/generation helpers and tests;
+- dynamic webhook runtime wiring using existing Telegram Bot/provisioning components;
+- Compose/installer permissions and fixed secret-file path wiring required for Control to
+  write Bot secret files;
+- focused installer E2E assertions that do not expose token contents.
+
+No unrelated schema, Sponsor/Node routing, referral issuance/anti-abuse, RBAC, backup,
+update/rollback, watchdog, Bot Content composition, new Telemt topology or public webhook
+registration is in scope.
 
 ## Current next action
 
-This branch is recovery-safe and intentionally blocked on missing product/runtime/tooling
-contracts, not on an unfinished contract-defined implementation. On resume, read the true
-branch HEAD and this plan from that exact HEAD, inspect every later commit/diff/CI, and
-repair any partial work forward. If there is no newer work, continue only when one of the
-blocked contracts is explicitly established in the repository or by product/runtime
-decision. Scope one blocker at a time and require scope CI, code CI, and promotion CI
-before moving to the next milestone.
+Require full CI PASS on this Stage 11X scope commit. Then implement the scoped migration,
+settings store, secret-file handling, panel/API surface, dynamic webhook configuration,
+and focused tests as one forward-only milestone. Require full code CI PASS before
+promotion. Preserve every unrelated blocker and architecture invariant above.
