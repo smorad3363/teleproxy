@@ -86,8 +86,8 @@ WHERE invitee_user_id = ?`, inviteeUser); err != nil {
 	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM schema_migrations").Scan(&migrationCount); err != nil {
 		t.Fatal(err)
 	}
-	if migrationCount != 14 {
-		t.Fatalf("migration count = %d, want 14", migrationCount)
+	if migrationCount != 15 {
+		t.Fatalf("migration count = %d, want 15", migrationCount)
 	}
 	if err := db.QueryRowContext(ctx, "SELECT eligible_at FROM referral_attributions WHERE invitee_user_id = ?", inviteeUser).Scan(&eligibleAt); err != nil {
 		t.Fatal(err)
