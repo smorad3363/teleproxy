@@ -70,6 +70,13 @@ assert_doctor() {
   grep -F 'Proxy Plane: healthy' <<<"$output" >/dev/null
 }
 
+assert_bot_runtime_secret_dir() {
+  local dir="$INSTALL_DIR/secrets/bot-runtime"
+  [[ -d "$dir" ]]
+  [[ "$(sudo stat -c '%a' "$dir")" == 700 ]]
+  [[ "$(sudo stat -c '%u:%g' "$dir")" == 10001:10001 ]]
+}
+
 run_install "$OUT1"
 state="$INSTALL_DIR/state/install.env"
 [[ -f "$state" ]]
@@ -83,6 +90,7 @@ proxy_port1=$(sudo awk -F= '$1 == "TPROXY_PROXY_PORT" {print $2}' "$state")
 grep -Eq '^Initial Password: [0-9a-f]{48}$' "$OUT1"
 grep -F 'Proxy Plane:      healthy (Telemt 3.5.7)' "$OUT1" >/dev/null
 [[ ! -e "$INSTALL_DIR/secrets/admin-bootstrap-password" ]]
+assert_bot_runtime_secret_dir
 curl -fsS --max-time 3 "http://127.0.0.1:${port1}/readyz" >/dev/null
 assert_control_healthy
 TPROXY_INSTALL_DIR="$INSTALL_DIR" "$TPROXY_BIN" panel | grep -F "http://127.0.0.1:${port1}" >/dev/null
@@ -121,6 +129,7 @@ if grep -Eq '^Initial Password: [0-9a-f]{48}$' "$OUT2"; then
   echo "initial password was reprinted on rerun" >&2
   exit 1
 fi
+assert_bot_runtime_secret_dir
 curl -fsS --max-time 3 "http://127.0.0.1:${port2}/readyz" >/dev/null
 assert_control_healthy
 TPROXY_INSTALL_DIR="$INSTALL_DIR" "$TPROXY_BIN" proxy status | grep -F 'Proxy Plane: healthy' >/dev/null

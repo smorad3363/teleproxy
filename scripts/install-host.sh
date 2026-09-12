@@ -35,6 +35,7 @@ DATA_DIR="$INSTALL_DIR/data"
 PROXY_DATA_DIR="$INSTALL_DIR/proxy-data"
 CONFIG_DIR="$INSTALL_DIR/config"
 SECRETS_DIR="$INSTALL_DIR/secrets"
+BOT_RUNTIME_SECRETS_DIR="$SECRETS_DIR/bot-runtime"
 LOCK_FILE="$STATE_DIR/install.lock"
 PANEL_BIND=${TPROXY_PANEL_BIND:-0.0.0.0}
 PROXY_BIND=${TPROXY_PROXY_BIND:-0.0.0.0}
@@ -48,7 +49,7 @@ ADMIN_USER=${TPROXY_ADMIN_USER:-admin}
 TPROXY_BIN=${TPROXY_TPROXY_BIN:-/usr/local/bin/tproxy}
 TELEMT_CONFIG="$CONFIG_DIR/telemt.toml"
 
-mkdir -p "$STATE_DIR" "$DATA_DIR" "$PROXY_DATA_DIR" "$CONFIG_DIR" "$SECRETS_DIR"
+mkdir -p "$STATE_DIR" "$DATA_DIR" "$PROXY_DATA_DIR" "$CONFIG_DIR" "$SECRETS_DIR" "$BOT_RUNTIME_SECRETS_DIR"
 chmod 0755 "$STATE_DIR"
 exec 9>"$LOCK_FILE"
 flock -n 9 || { echo "another Teleproxy installation is already running" >&2; exit 1; }
@@ -163,6 +164,8 @@ chown 65532:65532 "$TELEMT_CONFIG"
 chmod 0600 "$TELEMT_CONFIG"
 chown 0:10001 "$SECRETS_DIR"
 chmod 0710 "$SECRETS_DIR"
+chown 10001:10001 "$BOT_RUNTIME_SECRETS_DIR"
+chmod 0700 "$BOT_RUNTIME_SECRETS_DIR"
 if [[ -f "$password_file" ]]; then
   chown 10001:10001 "$password_file"
   chmod 0600 "$password_file"

@@ -19,6 +19,9 @@ func (s *Server) registerStartGiftSettingsRoutes() {
 	s.mux.HandleFunc("GET /settings", s.handleStartGiftSettingsPage)
 	s.mux.HandleFunc("GET /api/settings/start-gift", s.handleStartGiftSettingsGet)
 	s.mux.HandleFunc("PUT /api/settings/start-gift", s.handleStartGiftSettingsPut)
+	s.mux.HandleFunc("GET /api/settings/bot", s.handleBotRuntimeSettingsGet)
+	s.mux.HandleFunc("PUT /api/settings/bot", s.handleBotRuntimeSettingsPut)
+	s.mux.HandleFunc("POST /api/settings/bot/test", s.handleBotRuntimeSettingsTest)
 }
 
 func (s *Server) handleStartGiftSettingsGet(w http.ResponseWriter, r *http.Request) {

@@ -22,6 +22,7 @@ services:
     volumes:
       - "${TPROXY_DATA_DIR:?data dir required}:/var/lib/teleproxy"
       - "${TPROXY_SECRETS_DIR:?secrets dir required}:/run/teleproxy-secrets:ro"
+      - "${TPROXY_SECRETS_DIR:?secrets dir required}/bot-runtime:/run/teleproxy-bot-secrets"
     security_opt:
       - no-new-privileges:true
     cap_drop:
