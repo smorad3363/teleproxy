@@ -5,8 +5,8 @@ Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
 Latest verified code checkpoint: `229368ba6bde81f449ed1c0e91deb0c4a9d3ca46` (CP-072)
 Most recent verified code CI: `34658384988` PASS
-Current branch checkpoint: `d1109a83211903dcf5dd0602b9154f37cf3dc8cf` (post-CP-072 blocked recovery docs)
-Current branch CI: `34658771157` PASS
+Current branch checkpoint: `5706006fb59bc3d4012aaf1cbb4a7266e5790bbf` (Stage 11X initial scope docs)
+Current branch CI: `34665535932` PASS
 
 Historical execution detail is preserved without deletion:
 - through CP-059 at `docs/exec-plans/archive/mvp-bootstrap-through-cp059.md`;
@@ -68,6 +68,8 @@ are repaired forward only.
   established gate.
 - Post-CP-072 blocked recovery docs:
   `d1109a83211903dcf5dd0602b9154f37cf3dc8cf`, CI `34658771157` PASS.
+- Stage 11X initial scope docs:
+  `5706006fb59bc3d4012aaf1cbb4a7266e5790bbf`, CI `34665535932` PASS.
 
 ## Explicit blockers
 
@@ -138,7 +140,7 @@ The repository covers the previously contract-defined recovery primitives. Remai
 watchdog, backup/update/rollback, product routing, RBAC, Bot Content composition and CI
 tooling contracts stay blocked as recorded above.
 
-The user has now explicitly established one previously missing product contract: Telegram
+The user has explicitly established one previously missing product contract: Telegram
 Bot runtime credentials and administrator Chat ID must be configurable inside the Web
 Panel rather than by editing an `.env` file or installer command. That decision scopes
 Stage 11X below and does not resolve unrelated blockers.
@@ -164,12 +166,15 @@ Product/runtime contract established by the user:
 - A `Test Bot` action sends one fixed, non-user-controlled test message to the configured
   Admin Chat ID using the configured token. Telegram/API failure responses remain generic
   and must not leak token-bearing URLs or response bodies.
-- Telegram webhook handling reads the current enabled DB settings and secret files at
-  request time, so panel changes take effect without a Control restart. Disabled or
-  incomplete Bot configuration must not affect Control/Telemt startup or health.
-- Existing `/telegram/webhook` authentication semantics, Forced Join/start/provisioning
-  behavior and Telemt quota reconciliation remain unchanged once a configured Bot request
-  reaches the established handler.
+- Control reads enabled Bot runtime settings from SQLite and the secret files during
+  startup. Saving from the panel does not restart containers automatically; inbound
+  webhook activation/deactivation or username changes take effect after the operator runs
+  `tproxy restart`. The fixed `Test Bot` action uses the newly saved values immediately.
+- Disabled or absent Bot settings never prevent Control/Telemt startup or health. Enabled
+  settings are validated on startup; invalid/missing secret files fail Bot runtime setup
+  without exposing secret contents.
+- Existing `/telegram/webhook` authentication, rate limiting, Forced Join/start/
+  provisioning behavior and Telemt quota reconciliation remain unchanged once configured.
 - This milestone does not register a public Telegram webhook, invent TLS/domain exposure,
   add Bot Content delivery composition, add admin-notification behavior beyond the fixed
   test action, or add Chat-ID-based administrator authorization.
@@ -179,7 +184,7 @@ Implementation scope is limited to:
 - a small `internal/settings` Bot runtime store/validator and tests;
 - Web Panel/API wiring under the existing `/settings` surface plus tests;
 - safe Bot secret-file read/write/generation helpers and tests;
-- dynamic webhook runtime wiring using existing Telegram Bot/provisioning components;
+- startup Bot runtime wiring using the existing Telegram Bot/provisioning components;
 - Compose/installer permissions and fixed secret-file path wiring required for Control to
   write Bot secret files;
 - focused installer E2E assertions that do not expose token contents.
@@ -190,7 +195,7 @@ registration is in scope.
 
 ## Current next action
 
-Require full CI PASS on this Stage 11X scope commit. Then implement the scoped migration,
-settings store, secret-file handling, panel/API surface, dynamic webhook configuration,
-and focused tests as one forward-only milestone. Require full code CI PASS before
-promotion. Preserve every unrelated blocker and architecture invariant above.
+Require full CI PASS on this revised Stage 11X scope commit. Then implement the scoped
+migration, settings store, secret-file handling, panel/API surface, startup webhook
+configuration, and focused tests as one forward-only milestone. Require full code CI PASS
+before promotion. Preserve every unrelated blocker and architecture invariant above.
