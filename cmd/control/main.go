@@ -104,15 +104,21 @@ func run(logger *slog.Logger) error {
 
 	api := httpapi.NewWithProxyServicesAndForcedJoin(db, httpapi.Options{CookieSecure: cfg.CookieSecure}, proxyClient, quotaRunner)
 	var handler http.Handler = api.Handler()
-	webhook, botEnabled, err := configuredTelegramWebhook(context.Background(), db, cfg.BotUsername, proxyClient, quotaRunner)
+	botRuntime, botEnabled, err := configuredTelegramRuntime(context.Background(), db, cfg.BotUsername, proxyClient, quotaRunner)
 	if err != nil {
 		return err
 	}
 	if botEnabled {
 		root := http.NewServeMux()
-		root.Handle(telegramWebhookPath, webhook)
+		root.Handle(telegramWebhookPath, botRuntime.webhook)
 		root.Handle("/", handler)
 		handler = root
+		go func() {
+			if err := botRuntime.poller.Run(ctx); err != nil && ctx.Err() == nil {
+				logger.Error("Telegram Bot polling stopped", "error", err)
+			}
+		}()
+		logger.Info("Telegram Bot polling enabled")
 	}
 
 	server := &http.Server{

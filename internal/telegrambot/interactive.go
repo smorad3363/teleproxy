@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 )
@@ -93,13 +94,20 @@ func (c *Client) AnswerCallbackQuery(ctx context.Context, callbackID, text strin
 }
 
 func (c *Client) callBotAPI(ctx context.Context, method string, payload []byte) (json.RawMessage, error) {
+	return c.callBotAPIWithHTTPClient(ctx, c.httpClient, method, payload)
+}
+
+func (c *Client) callBotAPIWithHTTPClient(ctx context.Context, httpClient *http.Client, method string, payload []byte) (json.RawMessage, error) {
+	if c == nil || httpClient == nil {
+		return nil, &APIError{Code: FailureUnavailable}
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/bot"+c.token+"/"+method, bytes.NewReader(payload))
 	if err != nil {
 		return nil, &APIError{Code: FailureInvalidOutput}
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := c.httpClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, &APIError{Code: FailureUnavailable}
 	}
@@ -150,7 +158,7 @@ func validateInlineKeyboard(markup InlineKeyboardMarkup) error {
 				return fmt.Errorf("Telegram inline keyboard button must contain exactly one action")
 			}
 			if hasURL {
-				if err := validateTelegramJoinURL(button.URL); err != nil {
+				if err := validateInlineButtonURL(button.URL); err != nil {
 					return err
 				}
 			}
@@ -158,6 +166,45 @@ func validateInlineKeyboard(markup InlineKeyboardMarkup) error {
 				return fmt.Errorf("Telegram inline keyboard callback data is invalid")
 			}
 		}
+	}
+	return nil
+}
+
+func validateInlineButtonURL(value string) error {
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.User != nil || parsed.Fragment != "" {
+		return fmt.Errorf("Telegram inline keyboard URL is invalid")
+	}
+	if parsed.Scheme == "https" {
+		if parsed.Port() != "" {
+			return fmt.Errorf("Telegram inline keyboard URL is invalid")
+		}
+		host := strings.ToLower(parsed.Hostname())
+		if (host != "t.me" && host != "telegram.me") || parsed.Path == "" || parsed.Path == "/" {
+			return fmt.Errorf("Telegram inline keyboard URL is invalid")
+		}
+		return nil
+	}
+	if parsed.Scheme != "tg" || parsed.Host != "proxy" || parsed.Path != "" {
+		return fmt.Errorf("Telegram inline keyboard URL is invalid")
+	}
+	query := parsed.Query()
+	if strings.TrimSpace(query.Get("server")) == "" {
+		return fmt.Errorf("Telegram inline keyboard proxy URL is invalid")
+	}
+	port, err := strconv.ParseUint(query.Get("port"), 10, 16)
+	if err != nil || port == 0 {
+		return fmt.Errorf("Telegram inline keyboard proxy URL is invalid")
+	}
+	secret := query.Get("secret")
+	if len(secret) < 32 || len(secret) > 512 {
+		return fmt.Errorf("Telegram inline keyboard proxy URL is invalid")
+	}
+	for _, ch := range secret {
+		if (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F') || (ch >= '0' && ch <= '9') {
+			continue
+		}
+		return fmt.Errorf("Telegram inline keyboard proxy URL is invalid")
 	}
 	return nil
 }
@@ -181,4 +228,18 @@ func forcedJoinKeyboard(channels []StartRequiredChannel) InlineKeyboardMarkup {
 	}
 	rows = append(rows, []InlineKeyboardButton{{Text: "Recheck membership", CallbackData: forcedJoinRecheckCallbackData}})
 	return InlineKeyboardMarkup{InlineKeyboard: rows}
+}
+
+func startActionKeyboard(response StartResponse) (InlineKeyboardMarkup, bool) {
+	rows := make([][]InlineKeyboardButton, 0, 2)
+	if response.ProxyLink != "" {
+		rows = append(rows, []InlineKeyboardButton{{Text: "Connect Proxy", URL: response.ProxyLink}})
+	}
+	if response.ReferralLink != "" {
+		rows = append(rows, []InlineKeyboardButton{{Text: "Invite Friends", URL: response.ReferralLink}})
+	}
+	if len(rows) == 0 {
+		return InlineKeyboardMarkup{}, false
+	}
+	return InlineKeyboardMarkup{InlineKeyboard: rows}, true
 }

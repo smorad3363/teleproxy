@@ -32,7 +32,7 @@ var startGiftPageTemplate = template.Must(template.New("settings").Parse(`<!doct
 <section class="panel">
 <h1>Settings</h1>
 <h2>Telegram Bot</h2>
-<p class="muted">Configure the Bot runtime here. The token is write-only and is stored only in a protected secret file, never in SQLite. After saving, run <code>tproxy restart</code> on the server to apply incoming webhook activation or username changes.</p>
+<p class="muted">Configure the Bot runtime here. The token is write-only and is stored only in a protected secret file, never in SQLite. When enabled, Control receives Telegram updates by long polling, so no public webhook, domain or TLS setup is required. After changing Bot identity, token or enabled state, run <code>tproxy restart</code>. Bot Content text changes are read live.</p>
 <form id="bot-settings" autocomplete="off">
 <div class="grid">
 <label>Bot Username<input name="username" type="text" maxlength="64" value="{{.Bot.Username}}" placeholder="TeleproxyBot" required></label>
@@ -109,7 +109,7 @@ var startGiftPageTemplate = template.Must(template.New("settings").Parse(`<!doct
       }
       botForm.elements.token.value = '';
       botStatus.classList.add('ok');
-      botStatus.textContent = 'Saved. Run tproxy restart on the server to apply incoming webhook changes.';
+      botStatus.textContent = 'Saved. Run tproxy restart on the server to apply Bot runtime changes.';
     } catch (_) {
       botStatus.textContent = 'Request failed.';
     }

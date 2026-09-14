@@ -34,7 +34,7 @@ var botContentPageTemplate = template.Must(template.New("bot-content").Parse(`<!
 <body>
 <header><nav><strong>Teleproxy</strong><a href="/">Dashboard</a><a href="/users">Users</a><a href="/settings">Settings</a><a href="/bot-content" aria-current="page">Bot Content</a></nav><span class="muted">Signed in as {{.Username}}</span></header>
 <main>
-<section class="panel"><h1>Bot Content</h1><p class="muted">Configure literal text overrides only. Empty slots have no configured override; runtime Bot wiring, formatting, buttons and emoji are intentionally separate.</p></section>
+<section class="panel"><h1>Bot Content</h1><p class="muted">These overrides are read when a user interacts with the Bot. Welcome, Forced Join, Proxy and Referral are active in the current /start flow; empty slots keep the built-in fallback text. Proxy and referral action buttons are generated safely from the user's current links.</p></section>
 {{range .Slots}}
 <section class="panel" data-bot-slot="{{.Slot}}">
 <div class="slot-head"><div><h2>{{.Label}}</h2><div class="tag">{{.Slot}}</div></div>{{if .Configured}}<span>Configured</span>{{else}}<span class="muted">Not configured</span>{{end}}</div>

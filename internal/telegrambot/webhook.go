@@ -22,6 +22,7 @@ const (
 	defaultWebhookBodyBytes       int64 = 64 << 10
 	defaultWebhookPerSourceSecond       = 100
 	defaultWebhookGlobalSecond          = 200
+	maxTelegramMessageRunes             = 4096
 )
 
 type startUpdateHandler interface {
@@ -174,7 +175,7 @@ func (h *WebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if update.CallbackQuery != nil {
-		h.handleCallbackResult(r.Context(), *update.CallbackQuery, response, err)
+		handleCallbackResult(r.Context(), h.sender, *update.CallbackQuery, response, err)
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
@@ -191,34 +192,38 @@ func (h *WebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Once the idempotent start transaction has committed, an outbound Bot API
 	// failure must not roll it back. Returning success also avoids Telegram
 	// replaying an ambiguously-sent message and creating duplicate replies.
-	h.sendStartResponse(r.Context(), response)
+	sendStartResponse(r.Context(), h.sender, response)
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (h *WebhookHandler) handleCallbackResult(ctx context.Context, query CallbackQuery, response StartResponse, appErr error) {
+func handleCallbackResult(ctx context.Context, sender messageSender, query CallbackQuery, response StartResponse, appErr error) {
 	answer := "Membership verified."
 	if appErr != nil {
 		answer = "Membership check failed. Try again."
 	} else if len(response.MissingChannels) > 0 {
 		answer = "Join all required channels, then recheck."
 	}
-	if callbackSender, ok := h.sender.(callbackQueryAnswerer); ok {
+	if callbackSender, ok := sender.(callbackQueryAnswerer); ok {
 		_ = callbackSender.AnswerCallbackQuery(ctx, query.ID, answer)
 	}
 	if appErr == nil {
-		h.sendStartResponse(ctx, response)
+		sendStartResponse(ctx, sender, response)
 	}
 }
 
-func (h *WebhookHandler) sendStartResponse(ctx context.Context, response StartResponse) {
+func sendStartResponse(ctx context.Context, sender messageSender, response StartResponse) {
 	text := formatStartResponse(response)
-	if len(response.MissingChannels) > 0 {
-		if keyboardSender, ok := h.sender.(inlineKeyboardSender); ok {
+	if keyboardSender, ok := sender.(inlineKeyboardSender); ok {
+		if len(response.MissingChannels) > 0 {
 			_, _ = keyboardSender.SendMessageWithInlineKeyboard(ctx, response.ChatID, text, forcedJoinKeyboard(response.MissingChannels))
 			return
 		}
+		if markup, ok := startActionKeyboard(response); ok {
+			_, _ = keyboardSender.SendMessageWithInlineKeyboard(ctx, response.ChatID, text, markup)
+			return
+		}
 	}
-	_, _ = h.sender.SendMessage(ctx, response.ChatID, text)
+	_, _ = sender.SendMessage(ctx, response.ChatID, text)
 }
 
 func (h *WebhookHandler) authorized(candidate string) bool {
@@ -241,36 +246,84 @@ func validateWebhookSecret(secret string) error {
 
 func formatStartResponse(response StartResponse) string {
 	if len(response.MissingChannels) > 0 {
-		return formatMissingChannels(response.MissingChannels)
+		return formatMissingChannelsWithPrefix(response.MissingChannels, response.ForcedJoinText)
 	}
 	accountState := "ready"
 	if response.Created {
 		accountState = "created"
 	}
-	var text string
+	sections := make([]string, 0, 5)
+	if text := boundedCustomText(response.WelcomeText, 1000); text != "" {
+		sections = append(sections, text)
+	}
+	sections = append(sections, fmt.Sprintf("Teleproxy account %s.\nUser: %s\nRemaining credit: %d bytes", accountState, response.ProxyUsername, response.RemainingBytes))
 	if response.ProxyLink == "" {
-		text = fmt.Sprintf("Teleproxy account %s.\nUser: %s\nRemaining credit: %d bytes\nProxy link provisioning is pending.", accountState, response.ProxyUsername, response.RemainingBytes)
+		sections = append(sections, withOptionalPrefix(response.ProxyText, "Proxy link provisioning is pending."))
 	} else {
 		proxyState := "synchronizing"
 		if response.ProxySyncState == "synced" {
 			proxyState = "ready"
 		}
-		text = fmt.Sprintf("Teleproxy account %s.\nUser: %s\nRemaining credit: %d bytes\nProxy status: %s.\nProxy link:\n%s", accountState, response.ProxyUsername, response.RemainingBytes, proxyState, response.ProxyLink)
+		sections = append(sections, withOptionalPrefix(response.ProxyText, fmt.Sprintf("Proxy status: %s.\nProxy link:\n%s", proxyState, response.ProxyLink)))
 	}
-	if response.ReferralCode == "" {
+	if response.ReferralCode != "" {
+		referral := fmt.Sprintf("Referral code: %s\nSuccessful referrals: %d", response.ReferralCode, response.ReferralCount)
+		if response.ReferralLink != "" {
+			referral = fmt.Sprintf("Referral link:\n%s\nSuccessful referrals: %d", response.ReferralLink, response.ReferralCount)
+		}
+		sections = append(sections, withOptionalPrefix(response.ReferralText, referral))
+	}
+	return limitTelegramText(strings.Join(sections, "\n\n"))
+}
+
+func withOptionalPrefix(prefix, text string) string {
+	prefix = boundedCustomText(prefix, 700)
+	if prefix == "" {
 		return text
 	}
-	if response.ReferralLink != "" {
-		return fmt.Sprintf("%s\nReferral link:\n%s\nSuccessful referrals: %d", text, response.ReferralLink, response.ReferralCount)
+	return prefix + "\n" + text
+}
+
+func boundedCustomText(text string, maxRunes int) string {
+	text = strings.TrimSpace(text)
+	if text == "" || maxRunes <= 0 {
+		return ""
 	}
-	return fmt.Sprintf("%s\nReferral code: %s\nSuccessful referrals: %d", text, response.ReferralCode, response.ReferralCount)
+	runes := []rune(text)
+	if len(runes) <= maxRunes {
+		return text
+	}
+	if maxRunes == 1 {
+		return "…"
+	}
+	return strings.TrimSpace(string(runes[:maxRunes-1])) + "…"
+}
+
+func limitTelegramText(text string) string {
+	runes := []rune(text)
+	if len(runes) <= maxTelegramMessageRunes {
+		return text
+	}
+	if maxTelegramMessageRunes <= 1 {
+		return string(runes[:maxTelegramMessageRunes])
+	}
+	return strings.TrimSpace(string(runes[:maxTelegramMessageRunes-1])) + "…"
 }
 
 func formatMissingChannels(channels []StartRequiredChannel) string {
-	const maxMessageRunes = 4096
-	prefix := "Join the required Telegram channels before continuing:"
+	return formatMissingChannelsWithPrefix(channels, "")
+}
+
+func formatMissingChannelsWithPrefix(channels []StartRequiredChannel, configuredPrefix string) string {
+	prefix := strings.TrimSpace(configuredPrefix)
+	if prefix == "" {
+		prefix = "Join the required Telegram channels before continuing:"
+	}
 	suffix := "\n\nAfter joining, tap Recheck below or send /start again."
 	truncated := "\n\nAdditional required channels are configured."
+
+	maxPrefixRunes := 1200
+	prefix = boundedCustomText(prefix, maxPrefixRunes)
 
 	var builder strings.Builder
 	builder.WriteString(prefix)
@@ -283,8 +336,8 @@ func formatMissingChannels(channels []StartRequiredChannel) string {
 			entry += "\n" + channel.CustomText
 		}
 		entryRunes := len([]rune(entry))
-		if used+entryRunes+suffixRunes > maxMessageRunes {
-			if index < len(channels) && used+truncatedRunes+suffixRunes <= maxMessageRunes {
+		if used+entryRunes+suffixRunes > maxTelegramMessageRunes {
+			if index < len(channels) && used+truncatedRunes+suffixRunes <= maxTelegramMessageRunes {
 				builder.WriteString(truncated)
 			}
 			break

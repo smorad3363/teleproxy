@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/smorad3363/teleproxy/internal/botcontent"
 	"github.com/smorad3363/teleproxy/internal/credit"
 	"github.com/smorad3363/teleproxy/internal/forcedjoin"
 	"github.com/smorad3363/teleproxy/internal/proxyprovision"
@@ -36,6 +37,10 @@ type StartResponse struct {
 	ReferralLink     string                 `json:"referral_link,omitempty"`
 	ReferralCount    int64                  `json:"referral_count"`
 	MissingChannels  []StartRequiredChannel `json:"missing_channels,omitempty"`
+	WelcomeText      string                 `json:"welcome_text,omitempty"`
+	ForcedJoinText   string                 `json:"forced_join_text,omitempty"`
+	ProxyText        string                 `json:"proxy_text,omitempty"`
+	ReferralText     string                 `json:"referral_text,omitempty"`
 }
 
 type proxyProvisioner interface {
@@ -150,14 +155,18 @@ func (a *StartApplication) finishGatedIdentity(ctx context.Context, chatID int64
 		return StartResponse{}, true, fmt.Errorf("check Telegram forced join: %w", err)
 	}
 	if len(check.Missing) > 0 {
-		return StartResponse{
+		response := StartResponse{
 			ChatID:          chatID,
 			TelegramID:      user.TelegramID,
 			ProxyUsername:   user.ProxyUsername,
 			Created:         created,
 			Payload:         payload,
 			MissingChannels: startRequiredChannels(check.Missing),
-		}, true, nil
+		}
+		if err := a.attachBotContent(ctx, &response); err != nil {
+			return StartResponse{}, true, err
+		}
+		return response, true, nil
 	}
 	gift, err := telegramuser.EnsureStartGift(ctx, a.db, user.TelegramID, now)
 	if err != nil {
@@ -187,15 +196,17 @@ func (a *StartApplication) finishStart(ctx context.Context, chatID int64, payloa
 		RemainingBytes:   remaining,
 		Payload:          payload,
 	}
-	if a.provisioner == nil {
-		return response, true, nil
+	if a.provisioner != nil {
+		provisioned, err := a.provisioner.Ensure(ctx, user.ProxyUsername)
+		if err != nil {
+			return StartResponse{}, true, fmt.Errorf("provision Telegram proxy: %w", err)
+		}
+		response.ProxyLink = provisioned.Link
+		response.ProxySyncState = string(provisioned.SyncState)
 	}
-	provisioned, err := a.provisioner.Ensure(ctx, user.ProxyUsername)
-	if err != nil {
-		return StartResponse{}, true, fmt.Errorf("provision Telegram proxy: %w", err)
+	if err := a.attachBotContent(ctx, &response); err != nil {
+		return StartResponse{}, true, err
 	}
-	response.ProxyLink = provisioned.Link
-	response.ProxySyncState = string(provisioned.SyncState)
 	return response, true, nil
 }
 
@@ -215,6 +226,31 @@ func (a *StartApplication) attachReferralSummary(ctx context.Context, response *
 		query.Set("start", code.Value)
 		link := url.URL{Scheme: "https", Host: "t.me", Path: "/" + a.botUsername, RawQuery: query.Encode()}
 		response.ReferralLink = link.String()
+	}
+	return nil
+}
+
+func (a *StartApplication) attachBotContent(ctx context.Context, response *StartResponse) error {
+	if response == nil {
+		return fmt.Errorf("Telegram start response is required")
+	}
+	for _, item := range []struct {
+		slot botcontent.Slot
+		set  func(string)
+	}{
+		{slot: botcontent.SlotWelcome, set: func(text string) { response.WelcomeText = text }},
+		{slot: botcontent.SlotForcedJoin, set: func(text string) { response.ForcedJoinText = text }},
+		{slot: botcontent.SlotProxy, set: func(text string) { response.ProxyText = text }},
+		{slot: botcontent.SlotReferral, set: func(text string) { response.ReferralText = text }},
+	} {
+		entry, err := botcontent.Get(ctx, a.db, item.slot)
+		if errors.Is(err, botcontent.ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("read Telegram Bot content %s: %w", item.slot, err)
+		}
+		item.set(entry.Text)
 	}
 	return nil
 }
