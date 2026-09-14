@@ -72,7 +72,7 @@ assert_doctor() {
 
 assert_bot_runtime_secret_dir() {
   local dir="$INSTALL_DIR/secrets/bot-runtime"
-  [[ -d "$dir" ]]
+  sudo test -d "$dir"
   [[ "$(sudo stat -c '%a' "$dir")" == 700 ]]
   [[ "$(sudo stat -c '%u:%g' "$dir")" == 10001:10001 ]]
 }
