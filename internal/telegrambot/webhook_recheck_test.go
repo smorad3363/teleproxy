@@ -113,8 +113,11 @@ func TestWebhookSuccessfulRecheckAnswersAndSendsReadyMessage(t *testing.T) {
 	if sender.answerCalls != 1 || sender.answerText != "Membership verified." {
 		t.Fatalf("callback answer = %#v", sender)
 	}
-	if sender.plainCalls != 1 || sender.keyboardCalls != 0 || !strings.Contains(sender.text, "tg_42") {
+	if sender.plainCalls != 0 || sender.keyboardCalls != 1 || !strings.Contains(sender.text, "tg_42") {
 		t.Fatalf("message state = %#v", sender)
+	}
+	if len(sender.markup.InlineKeyboard) != 1 || len(sender.markup.InlineKeyboard[0]) != 1 || sender.markup.InlineKeyboard[0][0].Text != "Connect Proxy" || sender.markup.InlineKeyboard[0][0].URL != start.response.ProxyLink {
+		t.Fatalf("ready markup = %#v", sender.markup)
 	}
 }
 
