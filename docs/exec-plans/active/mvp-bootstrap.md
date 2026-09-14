@@ -3,10 +3,10 @@
 Status: ACTIVE
 Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
-Latest verified code checkpoint: `0dafb84228775b30434a0d0de6470dfa139b328d` (Stage 11Y polling/content runtime)
-Most recent verified code CI: `34833772706` PASS
-Current branch checkpoint: `7c9451c2fbf67413f18d39e0df96d638968a35b3` (Stage 13A first candidate)
-Current branch CI: `34834970777` FAILED at Format check; later gates skipped
+Latest verified code checkpoint: `d9ac31a10dad5dffdeb040b0ae06006771db3470` (Stage 13A + Bot `/start` provisioning fallback repair)
+Most recent verified code CI: `34836627620` PASS
+Current branch checkpoint: `d9ac31a10dad5dffdeb040b0ae06006771db3470` (latest verified code before this documentation synchronization)
+Current branch CI: `34836627620` PASS
 
 Historical execution detail is preserved without deletion:
 - through CP-059 at `docs/exec-plans/archive/mvp-bootstrap-through-cp059.md`;
@@ -23,6 +23,11 @@ is interrupted before an atomic branch move, re-read HEAD and this plan and reco
 from current HEAD plus the verified intended diff. Unreachable Git objects are not
 published branch state. Failed or superseded candidates remain historical evidence and
 are repaired forward only.
+
+The commit containing this plan synchronization is documentation-only and follows
+`d9ac31a...`; before any later code change, inspect that docs commit and its CI as part of
+normal recovery. Promotion to `main` must remain a non-force fast-forward and must receive
+its own complete CI before being described as published/final.
 
 ## Non-negotiable architecture
 
@@ -97,9 +102,28 @@ are repaired forward only.
   `1b7746ebc8f29fd053371eb851f69efabbafd809`.
 - Stage 13A first implementation candidate:
   `7c9451c2fbf67413f18d39e0df96d638968a35b3`, CI `34834970777` FAILED only at the
-  initial gofmt gate. Vet, migrations, tests and installer were therefore not run. Review
-  identified the formatting delta in the new Proxy Node constant declarations; repair it
-  forward without changing runtime behavior.
+  initial gofmt gate. Vet, migrations, tests and installer were therefore not run.
+- Stage 13A format repair:
+  `75a0ce259eda189f9f887f7b9b7f8aa20cfdd4c8`, CI `34835197825` FAILED only at full
+  Go tests after format, vet and SQLite migration gates passed. The dashboard rewrite had
+  removed the established server-rendered Administrator and Audit Log links; repaired
+  forward without reverting the shell/Quick Proxy work.
+- Stage 13A final panel/navigation repair:
+  `866a4868e7932566b799978c74ef3ed1e6336ec2`, CI `34835431754` PASS across every
+  established Go, migration, shell, Docker, Compose and installer E2E gate.
+- Bot `/start` provisioning fallback runtime repair:
+  `f53a519cee10320c82b2945dd5cbe3b6ad055fcb` keeps the account/credit response available
+  when Telemt proxy provisioning temporarily fails, leaving the existing proxy-pending
+  presentation to the response formatter instead of aborting the handled update.
+- Bot `/start` fallback regression candidate:
+  `ff3f9ab2fa48058da85c7e566bdbecc3d375e45e`, CI `34836483075` FAILED only at full
+  Go tests because one older provisioning test still asserted the superseded error-return
+  behavior; format, vet and SQLite migration gates passed and installer was skipped.
+- Bot `/start` fallback test repair:
+  `d9ac31a10dad5dffdeb040b0ae06006771db3470`, CI `34836627620` PASS across every
+  established Go, migration, shell, Docker, Compose and installer E2E gate. The legacy
+  test now verifies that repeated temporary provisioning failures keep exactly one start
+  gift while returning a handled pending response rather than silence.
 
 ## Explicit blockers still unresolved
 
@@ -151,60 +175,41 @@ object and succeeds on that check only for exactly `healthy`.
 
 The Web Panel manages Bot Username, Admin Chat ID, enabled state and write-only Bot Token.
 Bot token/webhook secret remain secret-file only. Test Bot sends a fixed message to the
-configured Admin Chat ID. Control reads enabled settings at startup.
+configured Admin Chat ID. Control reads enabled settings at startup. Runtime settings are
+loaded on Control startup, so a settings change that affects the enabled runtime still
+requires a Control restart before polling uses the new configuration.
 
 ### Stage 11Y — Telegram polling + Bot Content runtime delivery — COMPLETE
 
-An enabled Bot now uses bounded Telegram long polling, clears stale webhook registration
-without dropping pending updates, and no longer requires a public domain/TLS setup for
-normal `/start` delivery. Welcome, Forced Join, Proxy and Referral content slots are read
-at request time. Normal ready replies may render one-tap `Connect Proxy` and `Invite
-Friends` buttons. CI `34833772706` is the verified full PASS checkpoint.
+An enabled Bot uses bounded Telegram long polling, clears stale webhook registration
+without dropping pending updates, and does not require a public domain/TLS setup for normal
+`/start` delivery. Welcome, Forced Join, Proxy and Referral content slots are read at
+request time. Normal ready replies may render one-tap `Connect Proxy` and `Invite Friends`
+buttons. CI `34833772706` is the verified Stage 11Y recovery checkpoint.
 
-## Stage 13A — Panel shell + Quick Proxy UX — ACTIVE
+### Stage 13A — Panel shell + Quick Proxy UX — COMPLETE
 
-The user has approved the previously prepared panel redesign and requested implementation.
-The goal is to make normal administration look and behave like one product instead of a
-collection of unrelated forms, and to make adding a Telegram Proxy fast without exposing
-undefined infrastructure semantics.
+Established authenticated panel pages use one consistent responsive application shell
+with desktop/mobile navigation. The dashboard is an operational overview based only on
+established state. Proxy Nodes is presented as `Proxies`, with Quick Create requiring only
+Name, Region, Public address and MTProto port by default. Legacy host metadata mirrors the
+public address when omitted, and the existing single-node compatibility metadata endpoint
+`http://telemt:9091` remains under Advanced. Optional Required Channel creation reuses the
+existing global Forced Join contract and is explicitly not Node/Sponsor routing. No Node
+health probing, lifecycle behavior or Sponsor assignment was invented. Final Stage 13A CI
+`34835431754` PASS.
 
-Implementation contract:
-- Established authenticated panel pages gain one consistent responsive application shell:
-  fixed desktop sidebar, mobile navigation, consistent surfaces/forms/spacing and active
-  navigation. Login, health/readiness and JSON APIs are not visually wrapped or altered.
-- The dashboard becomes an operational overview using only already-established system
-  state. It may present Control, database, global proxy/read-only status and navigation
-  cards, but must not fabricate user/traffic/revenue/health metrics whose contracts do not
-  exist.
-- Proxy Nodes is presented as `Proxies` in the UI while preserving its existing static
-  metadata model and API compatibility.
-- Quick Create asks by default only for Name, Region, one Public address and MTProto port.
-  When `host` is omitted, Control mirrors the validated public address into the legacy
-  `host` metadata field. Existing callers that send both fields keep their current behavior.
-- The existing schema requires non-empty `internal_api_endpoint`; no migration or runtime
-  probing is introduced. When Quick Create omits it, Control stores the existing single-
-  node compatibility value `http://telemt:9091`. The field remains editable under
-  Advanced and remains metadata only until Stage 9D is explicitly contracted.
-- Advanced contains Node type, optional distinct internal-host override and the existing
-  internal API endpoint. No Node health/test/lifecycle behavior is inferred.
-- Quick Create may optionally create/reuse an established Forced Join Required Channel
-  from Telegram chat reference, display name and Telegram join URL. The UI must state
-  clearly that this is a global Bot Required Channel, not Node/Sponsor assignment.
-- Existing Sponsor Profiles remain a separate management surface. No Node/Sponsor routing,
-  sticky assignment, or sponsor selection algorithm is introduced.
-- Existing CRUD, CSRF, escaping, no-store behavior and no-probe guarantees remain intact.
+### Bot `/start` proxy-provisioning fallback — COMPLETE
 
-Verification scope:
-- shared shell appears on authenticated panel GET pages and not on login/API/health;
-- dashboard retains established state and exposes direct Create Proxy action;
-- Quick Create mirrors one public address into legacy host metadata;
-- omitted internal API endpoint gets only the established compatibility metadata default;
-- invalid public address is rejected without mutation;
-- Proxy page retains escaping, deterministic order and zero endpoint probes;
-- optional Required Channel flow uses existing Forced Join APIs and is labeled global;
-- full repository CI is required after each published forward repair until green.
+The Start transaction remains authoritative for user creation and credit gift. A temporary
+Telemt/proxy provisioning failure no longer turns an otherwise handled `/start` into a
+silent retry loop. The Bot returns the established account/credit response with no proxy
+link, which renders as proxy provisioning pending; a later `/start` can retry provisioning.
+Start-gift idempotency remains intact. CI `34836627620` PASS.
 
 ## Current next action
 
-Publish the minimal gofmt-only forward repair on top of `7c9451c...`, preserving the Stage
-13A runtime/UI diff exactly. Require complete GitHub CI before calling the stage PASS.
+Require the documentation synchronization commit containing this plan to complete all
+established CI gates. If green, compare `main` to `agent/mvp-bootstrap`, require a strict
+fast-forward, move `main` without force to the same verified HEAD, and require the resulting
+`main` CI to complete successfully before describing the build as finally published.
