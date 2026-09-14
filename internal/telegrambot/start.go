@@ -198,11 +198,10 @@ func (a *StartApplication) finishStart(ctx context.Context, chatID int64, payloa
 	}
 	if a.provisioner != nil {
 		provisioned, err := a.provisioner.Ensure(ctx, user.ProxyUsername)
-		if err != nil {
-			return StartResponse{}, true, fmt.Errorf("provision Telegram proxy: %w", err)
+		if err == nil {
+			response.ProxyLink = provisioned.Link
+			response.ProxySyncState = string(provisioned.SyncState)
 		}
-		response.ProxyLink = provisioned.Link
-		response.ProxySyncState = string(provisioned.SyncState)
 	}
 	if err := a.attachBotContent(ctx, &response); err != nil {
 		return StartResponse{}, true, err
