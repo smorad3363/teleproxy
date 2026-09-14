@@ -55,7 +55,7 @@ func New(db *sql.DB, options Options) *Server {
 }
 
 func (s *Server) Handler() http.Handler {
-	return s.mux
+	return panelThemeHandler(s.mux)
 }
 
 func (s *Server) routes() {

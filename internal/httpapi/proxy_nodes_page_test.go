@@ -26,7 +26,7 @@ func TestProxyNodePageRequiresAuthentication(t *testing.T) {
 	}
 }
 
-func TestProxyNodePageRendersCanonicalNodesEscapedNoStoreAndDoesNotProbe(t *testing.T) {
+func TestProxyNodePageRendersQuickCreateCanonicalNodesEscapedNoStoreAndDoesNotProbe(t *testing.T) {
 	db := testDB(t)
 	server, cookies, csrf := authenticatedProxyNodeAPI(t, db)
 	var endpointHits atomic.Int64
@@ -55,7 +55,7 @@ func TestProxyNodePageRendersCanonicalNodesEscapedNoStoreAndDoesNotProbe(t *test
 
 	response := perform(server.Handler(), http.MethodGet, "/nodes", nil, cookies)
 	if response.Code != http.StatusOK {
-		t.Fatalf("Proxy Node page = %d %s", response.Code, response.Body.String())
+		t.Fatalf("Proxy page = %d %s", response.Code, response.Body.String())
 	}
 	if response.Header().Get("Cache-Control") != "no-store" {
 		t.Fatalf("Cache-Control = %q", response.Header().Get("Cache-Control"))
@@ -65,7 +65,14 @@ func TestProxyNodePageRendersCanonicalNodesEscapedNoStoreAndDoesNotProbe(t *test
 	}
 	body := response.Body.String()
 	for _, want := range []string{
-		"Proxy Nodes",
+		"Proxies",
+		"Create Proxy",
+		`id="quick-create"`,
+		`name="public_host"`,
+		`name="host_override"`,
+		`name="sponsor_chat_ref"`,
+		`/api/forced-join/channels`,
+		"global Required Channel",
 		"telemt.internal",
 		"proxy.example.com",
 		"2001:db8::10",
@@ -79,22 +86,24 @@ func TestProxyNodePageRendersCanonicalNodesEscapedNoStoreAndDoesNotProbe(t *test
 		`id="create-node"`,
 		`class="edit-node"`,
 		`class="danger delete-node"`,
+		`id="tp-panel-theme"`,
+		`id="tp-panel-shell"`,
 	} {
 		if !strings.Contains(body, want) {
-			t.Fatalf("Proxy Node page missing %q: %s", want, body)
+			t.Fatalf("Proxy page missing %q: %s", want, body)
 		}
 	}
 	if strings.Contains(body, `<script>alert("x")</script>`) || strings.Contains(body, `DE <West>`) {
-		t.Fatalf("Proxy Node page rendered unescaped metadata: %s", body)
+		t.Fatalf("Proxy page rendered unescaped metadata: %s", body)
 	}
 	if !strings.Contains(body, `Alpha &lt;script&gt;alert(&#34;x&#34;)&lt;/script&gt;`) || !strings.Contains(body, `DE &lt;West&gt;`) {
-		t.Fatalf("Proxy Node metadata was not safely escaped: %s", body)
+		t.Fatalf("Proxy metadata was not safely escaped: %s", body)
 	}
 	if strings.Index(body, `data-id="`+strconv.FormatInt(first.ID, 10)+`"`) > strings.Index(body, `data-id="`+strconv.FormatInt(second.ID, 10)+`"`) {
-		t.Fatalf("Proxy Node page order is not deterministic by id: %s", body)
+		t.Fatalf("Proxy page order is not deterministic by id: %s", body)
 	}
 	if endpointHits.Load() != 0 {
-		t.Fatalf("Proxy Node page contacted configured internal endpoint %d times", endpointHits.Load())
+		t.Fatalf("Proxy page contacted configured internal endpoint %d times", endpointHits.Load())
 	}
 }
 
@@ -103,15 +112,18 @@ func TestProxyNodePageEmptyStateAndDashboardLink(t *testing.T) {
 	server, cookies, _ := authenticatedProxyNodeAPI(t, db)
 
 	page := perform(server.Handler(), http.MethodGet, "/nodes", nil, cookies)
-	if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), "No Proxy Nodes configured.") {
-		t.Fatalf("empty Proxy Node page = %d %s", page.Code, page.Body.String())
+	if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), "No proxies added yet. Use Quick Add above.") {
+		t.Fatalf("empty Proxy page = %d %s", page.Code, page.Body.String())
 	}
 
 	dashboard := perform(server.Handler(), http.MethodGet, "/", nil, cookies)
 	if dashboard.Code != http.StatusOK {
 		t.Fatalf("dashboard = %d %s", dashboard.Code, dashboard.Body.String())
 	}
-	if !strings.Contains(dashboard.Body.String(), `href="/nodes"`) {
-		t.Fatalf("dashboard does not link to Proxy Nodes: %s", dashboard.Body.String())
+	body := dashboard.Body.String()
+	for _, want := range []string{`href="/nodes"`, `href="/nodes#quick-create"`, "Overview", "Create Proxy", `id="tp-panel-theme"`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("dashboard missing %q: %s", want, body)
+		}
 	}
 }

@@ -6,12 +6,16 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/smorad3363/teleproxy/internal/proxynode"
 )
 
-const maxProxyNodeBodyBytes int64 = 8 << 10
+const (
+	maxProxyNodeBodyBytes          int64 = 8 << 10
+	defaultProxyNodeAPIEndpoint          = "http://telemt:9091"
+)
 
 type proxyNodePayload struct {
 	Type                proxynode.Type `json:"node_type"`
@@ -137,9 +141,20 @@ func decodeProxyNodeInput(w http.ResponseWriter, r *http.Request) (proxynode.Cre
 		writeProxyNodeProblem(w, r, http.StatusBadRequest, "PROXY_NODE_INVALID", "The Proxy Node request is invalid.")
 		return proxynode.CreateNode{}, false
 	}
+	host := strings.TrimSpace(payload.Host)
+	if host == "" {
+		host = payload.PublicHost
+	}
+	endpoint := strings.TrimSpace(payload.InternalAPIEndpoint)
+	if endpoint == "" {
+		// The legacy schema requires this metadata field. Keep the long-standing
+		// single-node Telemt service address as a compatibility default; nothing in
+		// Proxy Node CRUD probes or routes through it.
+		endpoint = defaultProxyNodeAPIEndpoint
+	}
 	input := proxynode.CreateNode{
-		Type: payload.Type, Name: payload.Name, Region: payload.Region, Host: payload.Host, PublicHost: payload.PublicHost,
-		MTProtoPort: *payload.MTProtoPort, InternalAPIEndpoint: payload.InternalAPIEndpoint, Enabled: *payload.Enabled,
+		Type: payload.Type, Name: payload.Name, Region: payload.Region, Host: host, PublicHost: payload.PublicHost,
+		MTProtoPort: *payload.MTProtoPort, InternalAPIEndpoint: endpoint, Enabled: *payload.Enabled,
 	}
 	if err := proxynode.ValidateInput(input); err != nil {
 		writeProxyNodeProblem(w, r, http.StatusBadRequest, "PROXY_NODE_INVALID", "The Proxy Node request is invalid.")
