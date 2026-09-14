@@ -3,10 +3,10 @@
 Status: ACTIVE
 Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
-Latest verified code checkpoint: `229368ba6bde81f449ed1c0e91deb0c4a9d3ca46` (CP-072)
-Most recent verified code CI: `34658384988` PASS
-Current branch checkpoint: `5706006fb59bc3d4012aaf1cbb4a7266e5790bbf` (Stage 11X initial scope docs)
-Current branch CI: `34665535932` PASS
+Latest verified code checkpoint: `65972e0ca743eac5eba2cd753677a39c7c47c932`
+Most recent verified code CI: `34829668347` PASS on `main`; branch-equivalent code CI `34828049841` PASS
+Current branch checkpoint: `65972e0ca743eac5eba2cd753677a39c7c47c932`
+Current branch CI: `34828049841` PASS
 
 Historical execution detail is preserved without deletion:
 - through CP-059 at `docs/exec-plans/archive/mvp-bootstrap-through-cp059.md`;
@@ -31,8 +31,8 @@ are repaired forward only.
 - Telemt quota/expiry is only an enforcement projection.
 - Control Plane and Telemt lifecycles remain independent.
 - Plaintext admin/API/Bot/webhook/MTProto secrets are never logged or persisted in
-  SQLite. Stage 11X explicitly permits Bot token/webhook-secret persistence only as
-  owner-readable secret files outside the database.
+  SQLite. Bot token/webhook-secret persistence is permitted only as owner-readable secret
+  files outside the database.
 - Migrations remain additive/backward-compatible.
 
 ## Current verified checkpoints
@@ -70,13 +70,22 @@ are repaired forward only.
   `d1109a83211903dcf5dd0602b9154f37cf3dc8cf`, CI `34658771157` PASS.
 - Stage 11X initial scope docs:
   `5706006fb59bc3d4012aaf1cbb4a7266e5790bbf`, CI `34665535932` PASS.
+- Stage 11X contract refinement:
+  `958f038bd006de39f5cdb5426a06d441fd8fe3d7`, CI `34665685922` PASS.
+- Stage 11X implementation candidate:
+  `0962113fcdb4a85f626c7b9281a1b92cc79db3d7`, CI `34666450151` FAILED at SQLite
+  migration tests; repaired forward.
+- Referral migration-count repair:
+  `7cd4cdd6a264d506e176a97592b770f3789f0512`, CI `34666509982` FAILED only at installer
+  E2E after Go/format/vet/migration gates passed; repaired forward.
+- Stage 11X final runtime/settings milestone:
+  `45ca6f94bf81656fd33a483863d0cd56a16ed0f3`, CI `34826989386` PASS.
+- Explicit panel-bind rerun override:
+  `65972e0ca743eac5eba2cd753677a39c7c47c932`, branch CI `34828049841` PASS.
+- `main` was fast-forwarded without force to the same `65972e0...` checkpoint; CI
+  `34829668347` PASS.
 
-## Explicit blockers
-
-### Stage 11H — Bot Content runtime delivery wiring — BLOCKED
-Runtime composition/fallback, button/emoji relationship, and missing-slot behavior are
-not defined. Do not invent them. Stage 11X below is only Bot runtime configuration and
-must not change Bot Content composition semantics.
+## Explicit blockers still unresolved
 
 ### Stage 9D — Proxy Node test/health/status — BLOCKED
 Per-Node credential source and `internal_api_endpoint` runtime meaning are not
@@ -91,9 +100,8 @@ inputs/threshold are unresolved. Do not invent them.
 
 Also do not invent Node/Sponsor assignment/routing, user-scoped referral-tree/history
 semantics, audit mutation/redaction wiring, Administrator RBAC enforcement,
-backup/restore, update/restart/log/version-source semantics, Dashboard metrics, new
-Telemt topology, or secret persistence outside the narrowly established Stage 11X Bot
-secret-file contract.
+backup/restore, update/rollback, watchdog policy, Dashboard metrics, new Telemt topology,
+or new plaintext-secret persistence.
 
 ## Remaining CI roadmap — REVIEWED / NOT SCOPED
 
@@ -103,7 +111,7 @@ install/rerun. Do not invent a targeted-integration selector, secret scanner con
 dependency scanner/version policy, target-distro harness, or upgrade/rollback smoke
 before those contracts exist.
 
-## Recovery/health milestones completed
+## Completed recovery/runtime milestones
 
 ### Stage 12F / CP-070 — Control Docker readiness healthcheck
 
@@ -116,86 +124,92 @@ independent restart/lifecycle policies.
 
 After direct Control `/readyz` succeeds, the host installer waits boundedly for the
 Control container Docker health status to become exactly `healthy` before the independent
-Telemt health gate and before installation success. The final scoped diff is exactly
-`scripts/install-host.sh` (+24 lines).
+Telemt health gate and before installation success.
 
 ### Stage 12H / CP-072 — `tproxy doctor` requires Control Docker health
 
-`tproxy doctor` now reports `Control Docker health: <status>` from the existing Docker
-health object and succeeds on that check only for exactly `healthy`. Existing Compose,
-running-container, direct `/readyz`, and Telemt health checks remain intact. Installer
-E2E asserts the healthy line after first install and rerun.
+`tproxy doctor` reports `Control Docker health: <status>` from the existing Docker health
+object and succeeds on that check only for exactly `healthy`.
 
-The final CP-072 code diff contains exactly:
-- `bin/tproxy` (+13 lines)
-- `tests/installer_e2e.sh` (+1 assertion)
+### Stage 11X — Panel-managed Telegram Bot runtime settings — COMPLETE
 
-No restart/watchdog action, restart-loop state, notification, Compose `depends_on`,
-schema/migration/API/topology, secret-persistence, or Control/Telemt lifecycle-coupling
-change was added.
+The Web Panel manages Bot Username, Admin Chat ID, enabled state and write-only Bot Token.
+Bot token/webhook secret remain secret-file only. Test Bot sends a fixed message to the
+configured Admin Chat ID. Control reads enabled settings at startup. Public TLS/domain
+exposure and webhook registration were intentionally not automated by Stage 11X.
 
-## Post-CP-072 roadmap/repository review
+## Stage 11Y — Telegram polling + Bot Content runtime delivery — SCOPED
 
-The repository covers the previously contract-defined recovery primitives. Remaining
-watchdog, backup/update/rollback, product routing, RBAC, Bot Content composition and CI
-tooling contracts stay blocked as recorded above.
+The user has now established the missing product behavior for the immediate Bot path:
+`/start` must work on a normal single-server install without requiring the operator to
+first configure a public HTTPS webhook, and panel-managed Bot Content must affect the
+messages users actually receive.
 
-The user has explicitly established one previously missing product contract: Telegram
-Bot runtime credentials and administrator Chat ID must be configurable inside the Web
-Panel rather than by editing an `.env` file or installer command. That decision scopes
-Stage 11X below and does not resolve unrelated blockers.
+Implementation contract:
+- An enabled Bot uses Telegram Bot API long polling from Control as the default inbound
+  update transport. It requires no public domain, TLS certificate, firewall opening or
+  Telegram webhook registration.
+- On polling startup, Control calls `deleteWebhook` with `drop_pending_updates=false` so
+  a stale/external webhook registration does not keep `getUpdates` in conflict and queued
+  updates are not intentionally discarded.
+- The existing authenticated `/telegram/webhook` handler stays available as a compatibility
+  endpoint, but an enabled runtime’s polling loop owns inbound Telegram delivery and clears
+  any registered webhook before polling.
+- Polling accepts only `message` and `callback_query` updates, uses bounded long-poll and
+  retry intervals, advances the offset only after an update is safely handled, and never
+  logs or surfaces token-bearing Bot API URLs.
+- Existing `/start`, Forced Join, idempotent start-gift, proxy provisioning, quota and
+  referral behavior remain the application source of truth.
+- Existing Bot Content slots become request-time runtime overrides without restart:
+  `welcome` prefixes normal start replies; `forced_join` replaces the default join prompt;
+  `proxy` prefixes the proxy section; `referral` prefixes the referral section. Missing
+  slots preserve the existing built-in fallback text.
+- Custom Bot Content is bounded when composed so dynamic account/proxy/referral data is
+  not allowed to produce a Telegram message over 4096 characters.
+- A successful normal `/start` reply gets one-tap inline buttons when data exists:
+  `Connect Proxy` uses the already validated `tg://proxy` link and `Invite Friends` uses
+  the generated `https://t.me/<bot>?start=<code>` link. Forced Join continues to render
+  one channel button per missing required channel plus the existing Recheck action.
+- `expired`, `no_credit` and `support` remain stored slots but are not newly wired until a
+  corresponding established runtime state/action exists; do not invent those triggers.
 
-## Stage 11X — Panel-managed Telegram Bot runtime settings — SCOPED
+Verification scope:
+- focused Bot API long-poll/deleteWebhook tests;
+- polling dispatch/offset behavior;
+- request-time Bot Content override tests;
+- inline proxy/referral button validation;
+- existing Telegram/Forced Join/provisioning tests;
+- full repository CI once the whole staged batch is published.
 
-Product/runtime contract established by the user:
-- The existing `/settings` Web Panel gains a Telegram Bot section for `Bot Username`,
-  `Admin Chat ID`, `Enabled`, and Bot Token replacement.
-- Bot Token is write-only in the UI/API. Reads expose only whether a token is configured;
-  the plaintext token is never returned, logged, or stored in SQLite.
-- Bot Token and Telegram webhook secret persist only as dedicated owner-readable secret
-  files (`0600`) under the existing Teleproxy secrets directory. The Control container
-  may write those two files; no other plaintext-secret persistence is introduced.
-- Webhook secret is generated cryptographically by Control when first enabling/saving Bot
-  configuration and is never rendered back to the UI.
-- Bot Username, positive administrator private-chat ID, enabled state, and timestamps are
-  stored in an additive SQLite settings table. Admin Chat ID is the destination for the
-  panel's fixed Bot configuration test message; no broader notification policy is
-  inferred.
-- Saving settings is CSRF-protected and bounded. Token input may be left empty only when a
-  valid token file already exists; an empty token never clears an existing token.
-- A `Test Bot` action sends one fixed, non-user-controlled test message to the configured
-  Admin Chat ID using the configured token. Telegram/API failure responses remain generic
-  and must not leak token-bearing URLs or response bodies.
-- Control reads enabled Bot runtime settings from SQLite and the secret files during
-  startup. Saving from the panel does not restart containers automatically; inbound
-  webhook activation/deactivation or username changes take effect after the operator runs
-  `tproxy restart`. The fixed `Test Bot` action uses the newly saved values immediately.
-- Disabled or absent Bot settings never prevent Control/Telemt startup or health. Enabled
-  settings are validated on startup; invalid/missing secret files fail Bot runtime setup
-  without exposing secret contents.
-- Existing `/telegram/webhook` authentication, rate limiting, Forced Join/start/
-  provisioning behavior and Telemt quota reconciliation remain unchanged once configured.
-- This milestone does not register a public Telegram webhook, invent TLS/domain exposure,
-  add Bot Content delivery composition, add admin-notification behavior beyond the fixed
-  test action, or add Chat-ID-based administrator authorization.
+## Panel UX review / next redesign — DESIGN READY, IMPLEMENTATION DEFERRED
 
-Implementation scope is limited to:
-- one additive migration for non-secret Bot runtime settings;
-- a small `internal/settings` Bot runtime store/validator and tests;
-- Web Panel/API wiring under the existing `/settings` surface plus tests;
-- safe Bot secret-file read/write/generation helpers and tests;
-- startup Bot runtime wiring using the existing Telegram Bot/provisioning components;
-- Compose/installer permissions and fixed secret-file path wiring required for Control to
-  write Bot secret files;
-- focused installer E2E assertions that do not expose token contents.
+The current panel is a collection of independently styled server-rendered pages with
+repeated headers/navigation/CSS. The dashboard is mostly a vertical list of links rather
+than an operational dashboard. Proxy Nodes exposes low-level future metadata that is not
+connected to current runtime routing, so it reads like an unfinished infrastructure form.
 
-No unrelated schema, Sponsor/Node routing, referral issuance/anti-abuse, RBAC, backup,
-update/rollback, watchdog, Bot Content composition, new Telemt topology or public webhook
-registration is in scope.
+The next redesign should use one consistent application shell and borrow the useful
+interaction pattern from `Sir-MmD/vpn-ui` without copying its protocol complexity:
+- persistent sidebar/navigation, compact top bar, responsive content area;
+- dashboard summary cards for active users, proxy health, bot state, required channels,
+  credit/referral summaries and recent actionable problems once those metrics have real
+  contracts;
+- primary `Create Proxy` / `New Inbound` action visible from dashboard and proxy page;
+- a short wizard/modal with a live summary rail: name, listen/public address, MTProto port,
+  enabled state, then optional sponsor/required-channel selection;
+- advanced infrastructure fields hidden behind an Advanced section rather than shown in
+  the default path;
+- existing Proxy Node metadata remains separate from the current single Telemt inbound
+  until multi-node routing semantics are explicitly contracted;
+- sponsor-channel selection in the quick-create UX must reuse established Sponsor/Forced
+  Join records; it must not silently invent Node/Sponsor routing semantics.
+
+No panel redesign code is part of Stage 11Y. This section is the approved design target
+for the next user-requested implementation stage.
 
 ## Current next action
 
-Require full CI PASS on this revised Stage 11X scope commit. Then implement the scoped
-migration, settings store, secret-file handling, panel/API surface, startup webhook
-configuration, and focused tests as one forward-only milestone. Require full code CI PASS
-before promotion. Preserve every unrelated blocker and architecture invariant above.
+Implement Stage 11Y as a forward-only staged batch, run local formatting/static checks
+that do not require unavailable network access, then publish the full batch once and
+require complete GitHub CI before calling it PASS. After Stage 11Y is green, begin the
+panel redesign only when explicitly requested.
