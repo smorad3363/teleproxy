@@ -173,6 +173,15 @@ Implementation contract:
 - `expired`, `no_credit` and `support` remain stored slots but are not newly wired until a
   corresponding established runtime state/action exists; do not invent those triggers.
 
+First Stage 11Y code candidate:
+- `5729360d59f507a408a1f7eabfec08ce26afb8fe`, CI `34833483776` FAILED only in the
+  full Go test step. Format, vet and SQLite migration gates passed. The failure was one
+  pre-existing webhook recheck test that still expected a plain ready message even though
+  Stage 11Y intentionally adds the `Connect Proxy` inline action to that same ready reply.
+- Forward repair candidate `75a89b63cdd85580c9713a6d56c9b9122e0d0069` changes only that legacy
+  test expectation to assert the new one-tap proxy button. No runtime behavior was weakened
+  to satisfy the test.
+
 Verification scope:
 - focused Bot API long-poll/deleteWebhook tests;
 - polling dispatch/offset behavior;
@@ -209,7 +218,7 @@ for the next user-requested implementation stage.
 
 ## Current next action
 
-Implement Stage 11Y as a forward-only staged batch, run local formatting/static checks
-that do not require unavailable network access, then publish the full batch once and
-require complete GitHub CI before calling it PASS. After Stage 11Y is green, begin the
-panel redesign only when explicitly requested.
+Publish the Stage 11Y forward repair on top of the failed candidate and require complete
+GitHub CI before calling it PASS. The first candidate already proved format, vet and
+SQLite migration gates; the repair must still pass the full workflow including installer
+E2E. After Stage 11Y is green, begin the panel redesign only when explicitly requested.
