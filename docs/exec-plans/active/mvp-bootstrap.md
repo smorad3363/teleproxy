@@ -3,10 +3,10 @@
 Status: ACTIVE
 Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
-Latest verified code checkpoint: `65972e0ca743eac5eba2cd753677a39c7c47c932`
-Most recent verified code CI: `34829668347` PASS on `main`; branch-equivalent code CI `34828049841` PASS
-Current branch checkpoint: `65972e0ca743eac5eba2cd753677a39c7c47c932`
-Current branch CI: `34828049841` PASS
+Latest verified code checkpoint: `0dafb84228775b30434a0d0de6470dfa139b328d` (Stage 11Y polling/content runtime)
+Most recent verified code CI: `34833772706` PASS
+Current branch checkpoint: `0dafb84228775b30434a0d0de6470dfa139b328d`
+Current branch CI: `34833772706` PASS
 
 Historical execution detail is preserved without deletion:
 - through CP-059 at `docs/exec-plans/archive/mvp-bootstrap-through-cp059.md`;
@@ -84,6 +84,15 @@ are repaired forward only.
   `65972e0ca743eac5eba2cd753677a39c7c47c932`, branch CI `34828049841` PASS.
 - `main` was fast-forwarded without force to the same `65972e0...` checkpoint; CI
   `34829668347` PASS.
+- Stage 11Y first polling/content candidate:
+  `5729360d59f507a408a1f7eabfec08ce26afb8fe`, CI `34833483776` FAILED only in one
+  legacy webhook-recheck expectation after format, vet and migration gates passed.
+- Stage 11Y forward repair:
+  `75a89b63cdd85580c9713a6d56c9b9122e0d0069` updated only that legacy test to the
+  intentional one-tap `Connect Proxy` response behavior.
+- Stage 11Y recovery checkpoint:
+  `0dafb84228775b30434a0d0de6470dfa139b328d`, CI `34833772706` PASS across all
+  established Go, migration, shell, Docker, Compose and installer E2E gates.
 
 ## Explicit blockers still unresolved
 
@@ -135,90 +144,62 @@ object and succeeds on that check only for exactly `healthy`.
 
 The Web Panel manages Bot Username, Admin Chat ID, enabled state and write-only Bot Token.
 Bot token/webhook secret remain secret-file only. Test Bot sends a fixed message to the
-configured Admin Chat ID. Control reads enabled settings at startup. Public TLS/domain
-exposure and webhook registration were intentionally not automated by Stage 11X.
+configured Admin Chat ID. Control reads enabled settings at startup.
 
-## Stage 11Y — Telegram polling + Bot Content runtime delivery — SCOPED
+### Stage 11Y — Telegram polling + Bot Content runtime delivery — COMPLETE
 
-The user has now established the missing product behavior for the immediate Bot path:
-`/start` must work on a normal single-server install without requiring the operator to
-first configure a public HTTPS webhook, and panel-managed Bot Content must affect the
-messages users actually receive.
+An enabled Bot now uses bounded Telegram long polling, clears stale webhook registration
+without dropping pending updates, and no longer requires a public domain/TLS setup for
+normal `/start` delivery. Welcome, Forced Join, Proxy and Referral content slots are read
+at request time. Normal ready replies may render one-tap `Connect Proxy` and `Invite
+Friends` buttons. CI `34833772706` is the verified full PASS checkpoint.
+
+## Stage 13A — Panel shell + Quick Proxy UX — SCOPED
+
+The user has approved the previously prepared panel redesign and requested implementation.
+The goal is to make normal administration look and behave like one product instead of a
+collection of unrelated forms, and to make adding a Telegram Proxy fast without exposing
+undefined infrastructure semantics.
 
 Implementation contract:
-- An enabled Bot uses Telegram Bot API long polling from Control as the default inbound
-  update transport. It requires no public domain, TLS certificate, firewall opening or
-  Telegram webhook registration.
-- On polling startup, Control calls `deleteWebhook` with `drop_pending_updates=false` so
-  a stale/external webhook registration does not keep `getUpdates` in conflict and queued
-  updates are not intentionally discarded.
-- The existing authenticated `/telegram/webhook` handler stays available as a compatibility
-  endpoint, but an enabled runtime’s polling loop owns inbound Telegram delivery and clears
-  any registered webhook before polling.
-- Polling accepts only `message` and `callback_query` updates, uses bounded long-poll and
-  retry intervals, advances the offset only after an update is safely handled, and never
-  logs or surfaces token-bearing Bot API URLs.
-- Existing `/start`, Forced Join, idempotent start-gift, proxy provisioning, quota and
-  referral behavior remain the application source of truth.
-- Existing Bot Content slots become request-time runtime overrides without restart:
-  `welcome` prefixes normal start replies; `forced_join` replaces the default join prompt;
-  `proxy` prefixes the proxy section; `referral` prefixes the referral section. Missing
-  slots preserve the existing built-in fallback text.
-- Custom Bot Content is bounded when composed so dynamic account/proxy/referral data is
-  not allowed to produce a Telegram message over 4096 characters.
-- A successful normal `/start` reply gets one-tap inline buttons when data exists:
-  `Connect Proxy` uses the already validated `tg://proxy` link and `Invite Friends` uses
-  the generated `https://t.me/<bot>?start=<code>` link. Forced Join continues to render
-  one channel button per missing required channel plus the existing Recheck action.
-- `expired`, `no_credit` and `support` remain stored slots but are not newly wired until a
-  corresponding established runtime state/action exists; do not invent those triggers.
-
-First Stage 11Y code candidate:
-- `5729360d59f507a408a1f7eabfec08ce26afb8fe`, CI `34833483776` FAILED only in the
-  full Go test step. Format, vet and SQLite migration gates passed. The failure was one
-  pre-existing webhook recheck test that still expected a plain ready message even though
-  Stage 11Y intentionally adds the `Connect Proxy` inline action to that same ready reply.
-- Forward repair candidate `75a89b63cdd85580c9713a6d56c9b9122e0d0069` changes only that legacy
-  test expectation to assert the new one-tap proxy button. No runtime behavior was weakened
-  to satisfy the test.
+- Established authenticated panel pages gain one consistent responsive application shell:
+  fixed desktop sidebar, mobile navigation, consistent surfaces/forms/spacing and active
+  navigation. Login, health/readiness and JSON APIs are not visually wrapped or altered.
+- The dashboard becomes an operational overview using only already-established system
+  state. It may present Control, database, global proxy/read-only status and navigation
+  cards, but must not fabricate user/traffic/revenue/health metrics whose contracts do not
+  exist.
+- Proxy Nodes is presented as `Proxies` in the UI while preserving its existing static
+  metadata model and API compatibility.
+- Quick Create asks by default only for Name, Region, one Public address and MTProto port.
+  When `host` is omitted, Control mirrors the validated public address into the legacy
+  `host` metadata field. Existing callers that send both fields keep their current behavior.
+- The existing schema requires non-empty `internal_api_endpoint`; no migration or runtime
+  probing is introduced. When Quick Create omits it, Control stores the existing single-
+  node compatibility value `http://telemt:9091`. The field remains editable under
+  Advanced and remains metadata only until Stage 9D is explicitly contracted.
+- Advanced contains Node type, optional distinct internal-host override and the existing
+  internal API endpoint. No Node health/test/lifecycle behavior is inferred.
+- Quick Create may optionally create/reuse an established Forced Join Required Channel
+  from Telegram chat reference, display name and Telegram join URL. The UI must state
+  clearly that this is a global Bot Required Channel, not Node/Sponsor assignment.
+- Existing Sponsor Profiles remain a separate management surface. No Node/Sponsor routing,
+  sticky assignment, or sponsor selection algorithm is introduced.
+- Existing CRUD, CSRF, escaping, no-store behavior and no-probe guarantees remain intact.
 
 Verification scope:
-- focused Bot API long-poll/deleteWebhook tests;
-- polling dispatch/offset behavior;
-- request-time Bot Content override tests;
-- inline proxy/referral button validation;
-- existing Telegram/Forced Join/provisioning tests;
-- full repository CI once the whole staged batch is published.
-
-## Panel UX review / next redesign — DESIGN READY, IMPLEMENTATION DEFERRED
-
-The current panel is a collection of independently styled server-rendered pages with
-repeated headers/navigation/CSS. The dashboard is mostly a vertical list of links rather
-than an operational dashboard. Proxy Nodes exposes low-level future metadata that is not
-connected to current runtime routing, so it reads like an unfinished infrastructure form.
-
-The next redesign should use one consistent application shell and borrow the useful
-interaction pattern from `Sir-MmD/vpn-ui` without copying its protocol complexity:
-- persistent sidebar/navigation, compact top bar, responsive content area;
-- dashboard summary cards for active users, proxy health, bot state, required channels,
-  credit/referral summaries and recent actionable problems once those metrics have real
-  contracts;
-- primary `Create Proxy` / `New Inbound` action visible from dashboard and proxy page;
-- a short wizard/modal with a live summary rail: name, listen/public address, MTProto port,
-  enabled state, then optional sponsor/required-channel selection;
-- advanced infrastructure fields hidden behind an Advanced section rather than shown in
-  the default path;
-- existing Proxy Node metadata remains separate from the current single Telemt inbound
-  until multi-node routing semantics are explicitly contracted;
-- sponsor-channel selection in the quick-create UX must reuse established Sponsor/Forced
-  Join records; it must not silently invent Node/Sponsor routing semantics.
-
-No panel redesign code is part of Stage 11Y. This section is the approved design target
-for the next user-requested implementation stage.
+- shared shell appears on authenticated panel GET pages and not on login/API/health;
+- dashboard retains established state and exposes direct Create Proxy action;
+- Quick Create mirrors one public address into legacy host metadata;
+- omitted internal API endpoint gets only the established compatibility metadata default;
+- invalid public address is rejected without mutation;
+- Proxy page retains escaping, deterministic order and zero endpoint probes;
+- optional Required Channel flow uses existing Forced Join APIs and is labeled global;
+- full repository CI is required after the batched branch publication.
 
 ## Current next action
 
-Publish the Stage 11Y forward repair on top of the failed candidate and require complete
-GitHub CI before calling it PASS. The first candidate already proved format, vet and
-SQLite migration gates; the repair must still pass the full workflow including installer
-E2E. After Stage 11Y is green, begin the panel redesign only when explicitly requested.
+Publish Stage 13A as one batched forward-only branch move after final diff review. Require
+complete GitHub CI before calling it PASS. Do not begin Node runtime routing, health,
+Sponsor assignment, new Telemt topology or invented dashboard metrics as part of this
+stage.
