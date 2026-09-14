@@ -3,10 +3,10 @@
 Status: ACTIVE
 Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
-Latest verified code checkpoint: `d9ac31a10dad5dffdeb040b0ae06006771db3470` (Stage 13A + Bot `/start` provisioning fallback repair)
-Most recent verified code CI: `34836627620` PASS
-Current branch checkpoint: `d9ac31a10dad5dffdeb040b0ae06006771db3470` (latest verified code before this documentation synchronization)
-Current branch CI: `34836627620` PASS
+Latest verified code checkpoint: `7ef2b3b1083670ddb4bc303df06d6a9002856539` (Bot polling delivery/diagnostic repair)
+Most recent verified code CI: `34838255090` PASS
+Current branch checkpoint: `7ef2b3b1083670ddb4bc303df06d6a9002856539` (latest verified code before this documentation synchronization)
+Current branch CI: `34838255090` PASS
 
 Historical execution detail is preserved without deletion:
 - through CP-059 at `docs/exec-plans/archive/mvp-bootstrap-through-cp059.md`;
@@ -25,7 +25,7 @@ published branch state. Failed or superseded candidates remain historical eviden
 are repaired forward only.
 
 The commit containing this plan synchronization is documentation-only and follows
-`d9ac31a...`; before any later code change, inspect that docs commit and its CI as part of
+`7ef2b3b...`; before any later code change, inspect that docs commit and its CI as part of
 normal recovery. Promotion to `main` must remain a non-force fast-forward and must receive
 its own complete CI before being described as published/final.
 
@@ -124,6 +124,17 @@ its own complete CI before being described as published/final.
   established Go, migration, shell, Docker, Compose and installer E2E gate. The legacy
   test now verifies that repeated temporary provisioning failures keep exactly one start
   gift while returning a handled pending response rather than silence.
+- Plan synchronization after Stage 13A/Bot fallback:
+  `5156cb78add3679580c2f28013c4aca9888e0129`, branch CI `34836963977` PASS; `main` was
+  then fast-forwarded without force to the same checkpoint and CI `34837240023` PASS.
+- Bot polling delivery/diagnostic repair:
+  `7ef2b3b1083670ddb4bc303df06d6a9002856539`, CI `34838255090` PASS across all
+  established Go, migration, shell, Docker, Compose and installer E2E gates. Polling now
+  treats a start reply as delivered only after Telegram accepts a message; an inline-
+  keyboard send failure falls back once to the same plain text, and a total send failure
+  keeps the update unacknowledged for retry. Terminal polling API failures such as
+  unauthorized/rejected/invalid responses now escape the polling loop so Control logs a
+  safe runtime failure instead of looping silently.
 
 ## Explicit blockers still unresolved
 
@@ -207,9 +218,18 @@ silent retry loop. The Bot returns the established account/credit response with 
 link, which renders as proxy provisioning pending; a later `/start` can retry provisioning.
 Start-gift idempotency remains intact. CI `34836627620` PASS.
 
+### Bot polling delivery reliability — COMPLETE
+
+Polling no longer advances the Telegram update offset when the outbound start reply fails.
+If an inline keyboard cannot be sent, the same bounded response is retried once as plain
+text. If that also fails, the update remains pending for the existing bounded retry loop.
+After webhook cleanup succeeds, terminal Bot API failures during polling are returned to
+the Control runtime logger rather than being swallowed indefinitely. No Bot token or
+Telegram error payload is logged. CI `34838255090` PASS.
+
 ## Current next action
 
 Require the documentation synchronization commit containing this plan to complete all
 established CI gates. If green, compare `main` to `agent/mvp-bootstrap`, require a strict
 fast-forward, move `main` without force to the same verified HEAD, and require the resulting
-`main` CI to complete successfully before describing the build as finally published.
+`main` CI to complete successfully before describing the repair as finally published.
