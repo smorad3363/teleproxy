@@ -57,6 +57,9 @@ func (p *Poller) Run(ctx context.Context) error {
 		}
 		if !p.webhookReady {
 			if err := p.client.DeleteWebhook(ctx); err != nil {
+				if isTerminalPollingFailure(err) {
+					return fmt.Errorf("prepare Telegram polling: %w", err)
+				}
 				if err := waitPollingRetry(ctx, p.retryDelay); err != nil {
 					return nil
 				}
@@ -69,8 +72,8 @@ func (p *Poller) Run(ctx context.Context) error {
 			if ctx.Err() != nil {
 				return nil
 			}
-			if FailureCodeOf(err) == FailureRejected {
-				p.webhookReady = false
+			if isTerminalPollingFailure(err) {
+				return fmt.Errorf("receive Telegram polling updates: %w", err)
 			}
 			if err := waitPollingRetry(ctx, p.retryDelay); err != nil {
 				return nil
@@ -114,8 +117,40 @@ func (p *Poller) dispatch(ctx context.Context, update Update) error {
 	if err != nil {
 		return err
 	}
-	sendStartResponse(ctx, p.sender, response)
-	return nil
+	return sendPollingStartResponse(ctx, p.sender, response)
+}
+
+func sendPollingStartResponse(ctx context.Context, sender messageSender, response StartResponse) error {
+	text := formatStartResponse(response)
+	if keyboardSender, ok := sender.(inlineKeyboardSender); ok {
+		var markup InlineKeyboardMarkup
+		var hasKeyboard bool
+		if len(response.MissingChannels) > 0 {
+			markup = forcedJoinKeyboard(response.MissingChannels)
+			hasKeyboard = true
+		} else if actionMarkup, ok := startActionKeyboard(response); ok {
+			markup = actionMarkup
+			hasKeyboard = true
+		}
+		if hasKeyboard {
+			if _, err := keyboardSender.SendMessageWithInlineKeyboard(ctx, response.ChatID, text, markup); err == nil {
+				return nil
+			}
+			// Keyboard validation or Bot API rejection must not make /start silent.
+			// Fall back to the same safe text without buttons before retrying the update.
+		}
+	}
+	_, err := sender.SendMessage(ctx, response.ChatID, text)
+	return err
+}
+
+func isTerminalPollingFailure(err error) bool {
+	switch FailureCodeOf(err) {
+	case FailureUnauthorized, FailureRejected, FailureInvalidOutput:
+		return true
+	default:
+		return false
+	}
 }
 
 func (c *Client) DeleteWebhook(ctx context.Context) error {
