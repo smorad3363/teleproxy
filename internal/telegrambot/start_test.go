@@ -10,6 +10,7 @@ import (
 
 	"github.com/smorad3363/teleproxy/internal/credit"
 	"github.com/smorad3363/teleproxy/internal/database"
+	"github.com/smorad3363/teleproxy/internal/proxyprovision"
 	"github.com/smorad3363/teleproxy/internal/settings"
 )
 
@@ -70,6 +71,31 @@ func TestStartApplicationShowsCurrentRemainingBalance(t *testing.T) {
 	}
 }
 
+func TestStartApplicationKeepsResponseWhenProxyProvisioningFails(t *testing.T) {
+	db := startAppTestDB(t)
+	now := time.Date(2032, 3, 1, 0, 0, 0, 0, time.UTC)
+	app, err := NewStartApplicationWithProvisioner(db, "TeleProxyBot", func() time.Time { return now }, failingStartProvisioner{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	update := Update{UpdateID: 20, Message: &Message{
+		MessageID: 30,
+		From:      &TelegramUser{ID: 8080, FirstName: "Proxy"},
+		Chat:      Chat{ID: 8080, Type: "private"},
+		Text:      "/start",
+	}}
+	response, handled, err := app.Handle(context.Background(), update)
+	if err != nil || !handled {
+		t.Fatalf("Handle() = %#v, %v, %v", response, handled, err)
+	}
+	if !response.Created || response.ProxyUsername != "tg_8080" || response.RemainingBytes != settings.DefaultStartGiftBytes {
+		t.Fatalf("response = %#v", response)
+	}
+	if response.ProxyLink != "" || response.ProxySyncState != "" {
+		t.Fatalf("proxy fields = link %q state %q", response.ProxyLink, response.ProxySyncState)
+	}
+}
+
 func TestStartApplicationIgnoresUnsafeOrUnrelatedUpdates(t *testing.T) {
 	db := startAppTestDB(t)
 	app, err := NewStartApplication(db, "TeleProxyBot", nil)
@@ -116,6 +142,12 @@ func TestStartApplicationPropagatesInvalidStartPayloadWithoutMutation(t *testing
 	if count != 0 {
 		t.Fatalf("invalid payload created %d users", count)
 	}
+}
+
+type failingStartProvisioner struct{}
+
+func (failingStartProvisioner) Ensure(context.Context, string) (proxyprovision.Result, error) {
+	return proxyprovision.Result{}, errors.New("proxy unavailable")
 }
 
 func startAppTestDB(t *testing.T) *sql.DB {
