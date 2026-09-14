@@ -52,7 +52,7 @@ func TestStartApplicationWithProvisionerReturnsLinkState(t *testing.T) {
 	}
 }
 
-func TestStartApplicationProvisionFailureKeepsIdempotentGift(t *testing.T) {
+func TestStartApplicationProvisionFailureKeepsIdempotentGiftAndPendingResponse(t *testing.T) {
 	db := startAppTestDB(t)
 	now := time.Date(2032, 3, 2, 0, 0, 0, 0, time.UTC)
 	provisioner := &fakeStartProvisioner{err: errors.New("temporary provisioning failure")}
@@ -62,9 +62,16 @@ func TestStartApplicationProvisionFailureKeepsIdempotentGift(t *testing.T) {
 	}
 	update := Update{Message: &Message{From: &TelegramUser{ID: 9002}, Chat: Chat{ID: 9002, Type: "private"}, Text: "/start"}}
 	for i := 0; i < 2; i++ {
-		if _, handled, err := app.Handle(context.Background(), update); err == nil || !handled {
-			t.Fatalf("attempt %d handled=%v err=%v", i, handled, err)
+		response, handled, err := app.Handle(context.Background(), update)
+		if err != nil || !handled {
+			t.Fatalf("attempt %d response=%#v handled=%v err=%v", i, response, handled, err)
 		}
+		if response.ProxyUsername != "tg_9002" || response.ProxyLink != "" || response.ProxySyncState != "" {
+			t.Fatalf("attempt %d response=%#v", i, response)
+		}
+	}
+	if provisioner.calls != 2 {
+		t.Fatalf("provisioner calls = %d, want 2", provisioner.calls)
 	}
 	buckets, err := credit.List(context.Background(), db, "tg_9002", now)
 	if err != nil {
