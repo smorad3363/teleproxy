@@ -6,6 +6,7 @@ INSTALL_DIR="$TMP/install"
 TPROXY_BIN="$TMP/tproxy"
 OUT1="$TMP/first.out"
 OUT2="$TMP/second.out"
+OUT3="$TMP/public-bind.out"
 # Keep the proxy test port outside the panel random range to avoid accidental collision.
 PROXY_PORT=$(bash -c "source '$ROOT/scripts/install_lib.sh'; choose_free_port 12000 19000 64")
 
@@ -21,18 +22,23 @@ trap cleanup EXIT
 
 run_install() {
   local out=$1
+  local panel_bind=${2:-}
+  local -a env_args=(
+    "PATH=$PATH"
+    "TPROXY_INSTALL_DIR=$INSTALL_DIR"
+    "TPROXY_PROXY_BIND=127.0.0.1"
+    "TPROXY_PROXY_PORT=$PROXY_PORT"
+    "TPROXY_REF=ci"
+    "TPROXY_CONTROL_IMAGE=teleproxy/control:ci"
+    "TPROXY_TELEMT_IMAGE=teleproxy/telemt:ci"
+    "TPROXY_TPROXY_BIN=$TPROXY_BIN"
+  )
+  if [[ -n "$panel_bind" ]]; then
+    env_args+=("TPROXY_PANEL_BIND=$panel_bind")
+  fi
   # Redirect intentionally stays with the invoking user; sudo applies only to installer.
   # shellcheck disable=SC2024
-  sudo env \
-    PATH="$PATH" \
-    TPROXY_INSTALL_DIR="$INSTALL_DIR" \
-    TPROXY_PANEL_BIND=127.0.0.1 \
-    TPROXY_PROXY_BIND=127.0.0.1 \
-    TPROXY_PROXY_PORT="$PROXY_PORT" \
-    TPROXY_REF=ci \
-    TPROXY_CONTROL_IMAGE=teleproxy/control:ci \
-    TPROXY_TELEMT_IMAGE=teleproxy/telemt:ci \
-    TPROXY_TPROXY_BIN="$TPROXY_BIN" \
+  sudo env -u TPROXY_PANEL_BIND "${env_args[@]}" \
     bash "$ROOT/scripts/install-host.sh" --source-dir "$ROOT" >"$out"
 }
 
@@ -77,13 +83,15 @@ assert_bot_runtime_secret_dir() {
   [[ "$(sudo stat -c '%u:%g' "$dir")" == 10001:10001 ]]
 }
 
-run_install "$OUT1"
+run_install "$OUT1" 127.0.0.1
 state="$INSTALL_DIR/state/install.env"
 [[ -f "$state" ]]
 port1=$(sudo awk -F= '$1 == "TPROXY_PANEL_PORT" {print $2}' "$state")
+panel_bind1=$(sudo awk -F= '$1 == "TPROXY_PANEL_BIND" {print $2}' "$state")
 phase1=$(sudo awk -F= '$1 == "TPROXY_INSTALL_PHASE" {print $2}' "$state")
 printed1=$(sudo awk -F= '$1 == "TPROXY_CREDENTIAL_PRINTED" {print $2}' "$state")
 proxy_port1=$(sudo awk -F= '$1 == "TPROXY_PROXY_PORT" {print $2}' "$state")
+[[ "$panel_bind1" == 127.0.0.1 ]]
 [[ "$phase1" == installed ]]
 [[ "$printed1" == 1 ]]
 [[ "$proxy_port1" == "$PROXY_PORT" ]]
@@ -119,10 +127,13 @@ if sudo grep -F "$api_token" "$state" >/dev/null || grep -F "$api_token" "$OUT1"
 fi
 unset api_token
 
+# A normal rerun with no explicit panel bind preserves the persisted loopback bind.
 run_install "$OUT2"
 port2=$(sudo awk -F= '$1 == "TPROXY_PANEL_PORT" {print $2}' "$state")
+panel_bind2=$(sudo awk -F= '$1 == "TPROXY_PANEL_BIND" {print $2}' "$state")
 proxy_port2=$(sudo awk -F= '$1 == "TPROXY_PROXY_PORT" {print $2}' "$state")
 [[ "$port2" == "$port1" ]]
+[[ "$panel_bind2" == 127.0.0.1 ]]
 [[ "$proxy_port2" == "$proxy_port1" ]]
 grep -F 'Initial Password: (already displayed on first successful install)' "$OUT2" >/dev/null
 if grep -Eq '^Initial Password: [0-9a-f]{48}$' "$OUT2"; then
@@ -133,6 +144,20 @@ assert_bot_runtime_secret_dir
 curl -fsS --max-time 3 "http://127.0.0.1:${port2}/readyz" >/dev/null
 assert_control_healthy
 TPROXY_INSTALL_DIR="$INSTALL_DIR" "$TPROXY_BIN" proxy status | grep -F 'Proxy Plane: healthy' >/dev/null
+assert_doctor
+
+# An explicit first-class panel bind override must replace a persisted bind on rerun.
+run_install "$OUT3" 0.0.0.0
+port3=$(sudo awk -F= '$1 == "TPROXY_PANEL_PORT" {print $2}' "$state")
+panel_bind3=$(sudo awk -F= '$1 == "TPROXY_PANEL_BIND" {print $2}' "$state")
+[[ "$port3" == "$port1" ]]
+[[ "$panel_bind3" == 0.0.0.0 ]]
+if grep -F 'Panel URL:        http://127.0.0.1:' "$OUT3" >/dev/null; then
+  echo "public panel-bind override still printed a loopback Panel URL" >&2
+  exit 1
+fi
+curl -fsS --max-time 3 "http://127.0.0.1:${port3}/readyz" >/dev/null
+assert_control_healthy
 assert_doctor
 
 echo "installer + Telemt end-to-end rerun test: PASS"
