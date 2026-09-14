@@ -5,8 +5,8 @@ Branch: `agent/mvp-bootstrap`
 Baseline: `79bfc2a4f0151719bf3502f74d7acb6b9600e094`
 Latest verified code checkpoint: `0dafb84228775b30434a0d0de6470dfa139b328d` (Stage 11Y polling/content runtime)
 Most recent verified code CI: `34833772706` PASS
-Current branch checkpoint: `0dafb84228775b30434a0d0de6470dfa139b328d`
-Current branch CI: `34833772706` PASS
+Current branch checkpoint: `7c9451c2fbf67413f18d39e0df96d638968a35b3` (Stage 13A first candidate)
+Current branch CI: `34834970777` FAILED at Format check; later gates skipped
 
 Historical execution detail is preserved without deletion:
 - through CP-059 at `docs/exec-plans/archive/mvp-bootstrap-through-cp059.md`;
@@ -93,6 +93,13 @@ are repaired forward only.
 - Stage 11Y recovery checkpoint:
   `0dafb84228775b30434a0d0de6470dfa139b328d`, CI `34833772706` PASS across all
   established Go, migration, shell, Docker, Compose and installer E2E gates.
+- Stage 13A scope docs:
+  `1b7746ebc8f29fd053371eb851f69efabbafd809`.
+- Stage 13A first implementation candidate:
+  `7c9451c2fbf67413f18d39e0df96d638968a35b3`, CI `34834970777` FAILED only at the
+  initial gofmt gate. Vet, migrations, tests and installer were therefore not run. Review
+  identified the formatting delta in the new Proxy Node constant declarations; repair it
+  forward without changing runtime behavior.
 
 ## Explicit blockers still unresolved
 
@@ -154,7 +161,7 @@ normal `/start` delivery. Welcome, Forced Join, Proxy and Referral content slots
 at request time. Normal ready replies may render one-tap `Connect Proxy` and `Invite
 Friends` buttons. CI `34833772706` is the verified full PASS checkpoint.
 
-## Stage 13A — Panel shell + Quick Proxy UX — SCOPED
+## Stage 13A — Panel shell + Quick Proxy UX — ACTIVE
 
 The user has approved the previously prepared panel redesign and requested implementation.
 The goal is to make normal administration look and behave like one product instead of a
@@ -195,11 +202,9 @@ Verification scope:
 - invalid public address is rejected without mutation;
 - Proxy page retains escaping, deterministic order and zero endpoint probes;
 - optional Required Channel flow uses existing Forced Join APIs and is labeled global;
-- full repository CI is required after the batched branch publication.
+- full repository CI is required after each published forward repair until green.
 
 ## Current next action
 
-Publish Stage 13A as one batched forward-only branch move after final diff review. Require
-complete GitHub CI before calling it PASS. Do not begin Node runtime routing, health,
-Sponsor assignment, new Telemt topology or invented dashboard metrics as part of this
-stage.
+Publish the minimal gofmt-only forward repair on top of `7c9451c...`, preserving the Stage
+13A runtime/UI diff exactly. Require complete GitHub CI before calling the stage PASS.

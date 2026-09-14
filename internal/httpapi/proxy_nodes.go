@@ -12,10 +12,8 @@ import (
 	"github.com/smorad3363/teleproxy/internal/proxynode"
 )
 
-const (
-	maxProxyNodeBodyBytes          int64 = 8 << 10
-	defaultProxyNodeAPIEndpoint          = "http://telemt:9091"
-)
+const maxProxyNodeBodyBytes int64 = 8 << 10
+const defaultProxyNodeAPIEndpoint = "http://telemt:9091"
 
 type proxyNodePayload struct {
 	Type                proxynode.Type `json:"node_type"`
